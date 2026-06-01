@@ -1,0 +1,14 @@
+# OS cruft
+.DS_Store
+
+# Large walkthrough media (regenerate via record.mjs / make-pdf.mjs)
+*.mp4
+*.webm
+Protech-Production-System-Clueso.pdf
+
+# Real business-data dumps — never publish
+_lots.sql
+_costs.sql
+
+# Generated screenshots
+screenshots/

@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0284c7" />
+<title>Lot Traceability — Protech Organo Foods</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230ea5e9'/%3E%3Cpath d='M2 16h28M16 2a20 20 0 010 28M16 2a20 20 0 000 28M5 9h22M5 23h22' stroke='%23fff' stroke-width='1.4' fill='none'/%3E%3C/svg%3E" />
+<style>
+  :root{
+    --primary:#0ea5e9; --primary-dark:#0284c7; --success:#10b981; --danger:#ef4444;
+    --ink:#0f172a; --muted:#64748b; --line:#e2e8f0; --bg:#f1f5f9; --card:#fff;
+    --radius:16px; --shadow:0 1px 3px rgba(15,23,42,.06),0 8px 24px rgba(15,23,42,.06);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased; min-height:100dvh}
+  .wrap{max-width:680px; margin:0 auto; padding:20px 16px 56px}
+
+  /* top brand bar */
+  .bar{display:flex; align-items:center; gap:12px; margin-bottom:18px}
+  .bar .mark{width:40px; height:40px; flex:0 0 40px}
+  .bar h1{margin:0; font-size:16px; font-weight:800; letter-spacing:.5px}
+  .bar p{margin:0; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:1px}
+
+  .card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow); margin-bottom:16px}
+
+  /* hero / lot header */
+  .hero{display:flex; flex-wrap:wrap; gap:18px; align-items:center; justify-content:space-between}
+  .hero .lot{font-size:30px; font-weight:800; letter-spacing:1px}
+  .verified{display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:#047857; background:#ecfdf5; border:1px solid #a7f3d0; border-radius:999px; padding:5px 12px; margin-top:8px}
+  .tags{display:flex; flex-wrap:wrap; gap:6px; margin-top:10px}
+  .chip{font-size:12px; font-weight:600; color:var(--primary-dark); background:#e0f2fe; border-radius:999px; padding:4px 11px}
+  .meta{font-size:13px; color:var(--muted); margin-top:10px}
+  .qr{display:flex; flex-direction:column; align-items:center; gap:6px}
+  .qr svg, .qr canvas{width:120px; height:120px; border-radius:10px; border:1px solid var(--line); background:#fff}
+  .qr .qcap{font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.6px}
+
+  /* journey */
+  .journey{position:relative; margin-top:6px; padding-left:34px}
+  .journey::before{content:""; position:absolute; left:13px; top:8px; bottom:8px; width:2px; background:var(--line)}
+  .stage{position:relative; margin-bottom:22px}
+  .stage .dot{position:absolute; left:-34px; top:0; width:28px; height:28px; border-radius:50%; display:grid; place-items:center; font-size:14px; background:#fff; border:2px solid var(--line)}
+  .stage.done .dot{border-color:var(--success); background:#ecfdf5}
+  .stage h3{margin:0 0 2px; font-size:15px; font-weight:700}
+  .stage .cnt{font-size:12px; color:var(--muted); margin-bottom:8px}
+  .entry{background:#fff; border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:8px}
+  .entry .et{font-weight:600; font-size:13px; display:flex; justify-content:space-between; gap:8px; align-items:baseline}
+  .entry .ew{font-size:11px; color:var(--muted); font-weight:500; white-space:nowrap}
+  .kv{display:grid; grid-template-columns:auto 1fr; gap:3px 14px; margin:8px 0 0; font-size:13px}
+  .kv dt{color:var(--muted)} .kv dd{margin:0; font-weight:500}
+  .thumbs{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px}
+  .thumb{width:78px; height:78px; border-radius:10px; object-fit:cover; border:1px solid var(--line); cursor:pointer; background:#f1f5f9}
+
+  .state{text-align:center; padding:48px 20px; color:var(--muted)}
+  .state .big{font-size:44px; margin-bottom:10px}
+  .foot{text-align:center; font-size:12px; color:var(--muted); margin-top:24px; line-height:1.6}
+
+  .lightbox{position:fixed; inset:0; z-index:100; background:rgba(15,23,42,.9); display:grid; place-items:center; padding:20px}
+  .lightbox img{max-width:100%; max-height:100%; border-radius:12px}
+  .lightbox .x{position:absolute; top:16px; right:16px; width:44px; height:44px; border-radius:50%; background:rgba(255,255,255,.15); color:#fff; font-size:22px; border:none; cursor:pointer}
+  .hidden{display:none !important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="bar">
+    <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
+      <circle cx="32" cy="32" r="30" fill="#0ea5e9"/>
+      <g stroke="#fff" stroke-width="2" fill="none" opacity=".95">
+        <circle cx="32" cy="32" r="30"/>
+        <path d="M2 32h60M32 2c12 9 12 51 0 60M32 2C20 11 20 53 32 62M8 16h48M8 48h48"/>
+      </g>
+    </svg>
+    <div>
+      <h1>PROTECH ORGANO FOODS</h1>
+      <p>Production &amp; Traceability</p>
+    </div>
+  </div>
+  <div id="content">
+    <div class="state"><div class="big">⏳</div><div>Loading traceability record…</div></div>
+  </div>
+  <div class="foot">
+    Protech Organo Foods · KSIDC Mega Food Park, Pallipuram, Cherthala, Alappuzha 688541<br/>
+    Read-only verified production record. Scan or share this page for full lot traceability.
+  </div>
+</div>
+
+<!-- config + tested data layer (both work without login) -->
+<script src="config.js"></script>
+<script src="db.js"></script>
+<!-- QR generator (graceful fallback to plain link if blocked) -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"
+        onerror="window.__noQR=true"></script>
+<script>
+(function(){
+  "use strict";
+  const content = document.getElementById("content");
+  const params = new URLSearchParams(location.search);
+  const lotNumber = (params.get("lot")||"").trim();
+
+  function el(tag, attrs, kids){
+    const n=document.createElement(tag);
+    if(attrs) for(const k in attrs){
+      if(k==="class") n.className=attrs[k];
+      else if(k==="html") n.innerHTML=attrs[k];
+      else if(k==="text") n.textContent=attrs[k];
+      else if(k.startsWith("on")&&typeof attrs[k]==="function") n.addEventListener(k.slice(2),attrs[k]);
+      else if(attrs[k]!=null) n.setAttribute(k,attrs[k]);
+    }
+    if(kids)(Array.isArray(kids)?kids:[kids]).forEach(c=>{ if(c==null)return; n.appendChild(typeof c==="string"?document.createTextNode(c):c); });
+    return n;
+  }
+  function state(icon, title, sub){
+    content.innerHTML="";
+    content.appendChild(el("div",{class:"state"},[
+      el("div",{class:"big",text:icon}), el("div",{style:"font-weight:600;color:var(--ink);font-size:16px",text:title}),
+      sub?el("div",{style:"margin-top:6px",text:sub}):null ]));
+  }
+  function lightbox(url){
+    const box=el("div",{class:"lightbox", onclick:()=>box.remove()},[ el("button",{class:"x",text:"✕"}), el("img",{src:url}) ]);
+    document.body.appendChild(box);
+  }
+  function whenOf(t){ if(!t) return ""; const d=new Date(t); return isNaN(d)?String(t):d.toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"}); }
+  function dur(sec){ if(sec==null) return null; const m=Math.floor(sec/60),h=Math.floor(m/60); return h>0?`${h}h ${m%60}m`:(m>0?`${m}m`:`${sec}s`); }
+  const F=(k,v)=>[k,v];
+
+  function entry(en){
+    const node=el("div",{class:"entry"});
+    node.appendChild(el("div",{class:"et"},[ el("span",{text:en.title}), en.when?el("span",{class:"ew",text:en.when}):null ]));
+    const fields=(en.fields||[]).filter(f=>f[1]!=null&&f[1]!=="");
+    if(fields.length){ const dl=el("dl",{class:"kv"}); fields.forEach(([k,v])=>{ dl.appendChild(el("dt",{text:k})); dl.appendChild(el("dd",{text:String(v)})); }); node.appendChild(dl); }
+    const photos=(en.photos||[]).filter(Boolean);
+    if(photos.length){ const tw=el("div",{class:"thumbs"}); photos.forEach(u=>tw.appendChild(el("img",{class:"thumb",src:u,loading:"lazy",onclick:()=>lightbox(u)}))); node.appendChild(tw); }
+    return node;
+  }
+
+  function additives(r){ const a=[]; if(r.additive_stpp_np)a.push("STPP/NP"); if(r.additive_paprika)a.push("Paprika"); if(r.additive_salt)a.push("Salt"); return a.length?a.join(", "):null; }
+  const DEFECTS={defect_freezer_burn:"Freezer burn",defect_deterioration:"Deterioration",defect_discolouration:"Discolouration",defect_dehydration:"Dehydration",defect_black_spot:"Black spot",defect_black_ring:"Black ring",defect_broken:"Broken",defect_damaged_bruised:"Damaged/bruised",defect_vein:"Vein",defect_loose_shell:"Loose shell",defect_soft_shell:"Soft shell",defect_semi_peeled:"Semi-peeled",defect_clumps:"Clumps",defect_foreign_matter:"Foreign matter",defect_foreign_veg_matter:"Foreign veg matter"};
+
+  function renderQR(host){
+    const url=location.href;
+    const box=el("div",{class:"qr"});
+    try{
+      if(window.__noQR || typeof qrcode!=="function") throw new Error("no lib");
+      const qr=qrcode(0,"M"); qr.addData(url); qr.make();
+      box.innerHTML = qr.createSvgTag({cellSize:4, margin:2});
+      const svg=box.querySelector("svg"); if(svg){ svg.removeAttribute("width"); svg.removeAttribute("height"); }
+    }catch(_){
+      box.appendChild(el("div",{style:"font-size:11px;color:var(--muted);max-width:120px;word-break:break-all;text-align:center",text:url}));
+    }
+    box.appendChild(el("div",{class:"qcap",text:"Scan to verify"}));
+    host.appendChild(box);
+  }
+
+  async function run(){
+    if(!lotNumber){ return state("🔍","No lot specified","Add ?lot=… to the URL, e.g. trace.html?lot=5/89/26"); }
+    let DB=window.PROTECH_DB;
+    if(!DB){ return state("⚠️","Configuration missing","Data layer unavailable."); }
+    try{ await DB.init(); }catch(_){}
+    if(!DB.isOnline()){ return state("📡","Could not reach the record","Please check your connection and reload."); }
+
+    try{
+      const lot=await DB.getLot(lotNumber);
+      if(!lot){ return state("🦐","Lot not found","No production record exists for "+lotNumber+"."); }
+
+      const T=(t)=>DB.listByLot(t, lotNumber);
+      const [grades,shedRcpt,shedRep,peelOut,treat,plans,machine,temps,oirSamples,qc,packing,inv]=await Promise.all([
+        T("lot_grades"),T("shed_receipts"),T("peeling_shed_reports"),T("peeling_output"),T("treatment_logs"),
+        T("production_plans"),T("machine_events"),T("temp_logs"),T("online_inspection_samples"),T("qc_logs"),
+        T("packing_status"),T("inventory_transactions") ]);
+      const repIds=[...new Set(oirSamples.map(s=>s.report_id).filter(Boolean))];
+      let oirReports=[]; if(repIds.length){ const {data}=await DB.client.from("online_inspection_reports").select("*").in("id",repIds); oirReports=data||[]; }
+      const samplesByReport={}; oirSamples.forEach(s=>(samplesByReport[s.report_id]=samplesByReport[s.report_id]||[]).push(s));
+
+      content.innerHTML="";
+
+      // ---- hero card ----
+      const tags=[lot.species,lot.product,lot.market].filter(Boolean).map(t=>el("span",{class:"chip",text:t}));
+      const hero=el("div",{class:"card"},[
+        el("div",{class:"hero"},[
+          el("div",{},[
+            el("div",{class:"lot",text:lot.lot_number}),
+            el("div",{class:"verified"},[el("span",{text:"✓"}),el("span",{text:"Verified production record"})]),
+            el("div",{class:"tags"},tags),
+            el("div",{class:"meta",text:[lot.intake_date?("Intake "+whenOf(lot.intake_date)):null, lot.truck_plate].filter(Boolean).join(" · ")||""}),
+          ]),
+          (function(){ const h=el("div"); renderQR(h); return h.firstChild; })(),
+        ]),
+      ]);
+      content.appendChild(hero);
+
+      // ---- journey ----
+      const tempByStage={}; temps.forEach(t=>(tempByStage[t.stage||"freezing"]=tempByStage[t.stage||"freezing"]||[]).push(t));
+      const qcByStage={}; qc.forEach(q=>(qcByStage[q.stage||"qc"]=qcByStage[q.stage||"qc"]||[]).push(q));
+
+      const STAGES=[
+        { icon:"🚚", name:"Origin & Intake", entries:[].concat(
+            grades.map(r=>entry({title:"Grade "+(r.grade||"—"), when:whenOf(r.created_at), fields:[F("Count/kg",r.count_per_kg),F("Boxes",r.boxes),F("Qty (kg)",r.qty_kg)]})),
+            shedRcpt.map(r=>entry({title:"Shed Receipt"+(r.shed_name?" — "+r.shed_name:""), when:whenOf(r.created_at), fields:[F("Species",r.species),F("Total boxes",r.total_boxes),F("Total kg",r.total_kg)], photos:[r.photo_url]}))) },
+        { icon:"✂️", name:"Peeling", entries:[].concat(
+            shedRep.map(r=>entry({title:"Peeling Shed Report", when:whenOf(r.created_at), fields:[F("Yield %",r.yield_pct),F("Converted",r.converted_count),F("Section i/c",r.section_in_charge)], photos:[r.photo_url]})),
+            peelOut.map(r=>entry({title:"Peeling Output"+(r.source?" — "+r.source:""), when:whenOf(r.created_at), fields:[F("Yield %",r.yield_pct),F("Converted",r.converted_count),F("Boxes",r.boxes)]}))) },
+        { icon:"🧪", name:"Treatment / Soaking", entries:treat.map(r=>entry({title:"Treatment — Tub "+(r.tub_no||"—"), when:whenOf(r.date||r.created_at), fields:[F("Product",r.product),F("% gain",r.pct_gain),F("Soak",[r.soak_in_time,r.soak_out_time].filter(Boolean).join(" – ")||null),F("Additives",additives(r))]})) },
+        { icon:"❄️", name:"Production / Freezing", entries:[].concat(
+            machine.map(r=>entry({title:({ice:"Ice machine",plate_freezer:"Plate freezer",tunnel:"Tunnel",iqf_infeed:"IQF infeed"})[r.machine_type]||"Machine", when:whenOf(r.start_at||r.created_at), fields:[F("Duration",dur(r.duration_seconds))]})),
+            (tempByStage.freezing||[]).map(r=>entry({title:"Temperature", when:whenOf(r.recorded_at), fields:[F("Point",r.point),F("Temp °C",r.temp_c)], photos:[r.photo_url]}))) },
+        { icon:"🔬", name:"Quality Inspection", entries:[].concat(
+            oirReports.map(rep=>{ const ss=samplesByReport[rep.id]||[]; const tot={}; ss.forEach(s=>{for(const k in DEFECTS){const v=Number(s[k])||0; if(v)tot[k]=(tot[k]||0)+v;}});
+              const dsum=Object.keys(tot).map(k=>DEFECTS[k]+" "+tot[k]).join(", ")||"None recorded";
+              const glz=ss.map(s=>Number(s.glaze_pct)).filter(n=>!isNaN(n)); const avg=glz.length?(glz.reduce((a,b)=>a+b,0)/glz.length).toFixed(1):null;
+              return entry({title:"Online Inspection"+(rep.market?" — "+rep.market:""), when:whenOf(rep.date||rep.created_at), fields:[F("Target glaze %",rep.target_glaze_pct),F("Avg glaze %",avg),F("Samples",ss.length||null),F("Defects",dsum)]}); }),
+            (qcByStage.depanning||[]).concat(qcByStage.repacking||[]).map(r=>entry({title:"QC — "+(r.stage||""), when:whenOf(r.created_at), fields:[F("Glaze %",r.glaze_pct),F("Core temp after",r.core_temp_after)], photos:[r.photo_url]}))) },
+        { icon:"🧊", name:"Packing & Dispatch", entries:[].concat(
+            packing.map(r=>entry({title:"Packing"+(r.buyer?" — "+r.buyer:""), when:whenOf(r.recorded_at), fields:[F("Cases packed",r.cases_packed),F("Cases target",r.cases_target)]})),
+            (qcByStage.stuffing||[]).map(r=>entry({title:"Stuffing", when:whenOf(r.created_at), fields:[F("Glaze %",r.glaze_pct),F("Stuffing temp °C",r.stuffing_temp_c)], photos:[r.photo_url]})),
+            inv.filter(r=>r.txn_type==="dispatch").map(r=>entry({title:"Dispatch"+(r.buyer?" — "+r.buyer:""), when:whenOf(r.dispatch_date||r.created_at), fields:[F("Cases",r.qty_cases),F("Container",r.container_no)]}))) },
+      ];
+
+      const journey=el("div",{class:"card"},[ el("div",{class:"journey"}) ]);
+      const track=journey.querySelector(".journey");
+      STAGES.forEach(s=>{
+        const done=s.entries.length>0;
+        const st=el("div",{class:"stage"+(done?" done":"")},[
+          el("div",{class:"dot",text:s.icon}),
+          el("h3",{text:s.name}),
+          el("div",{class:"cnt",text:done?(s.entries.length+" record"+(s.entries.length>1?"s":"")):"Pending"}),
+        ]);
+        s.entries.forEach(e=>st.appendChild(e));
+        track.appendChild(st);
+      });
+      content.appendChild(journey);
+
+    }catch(e){ state("⚠️","Could not load record", String(e.message||e)); }
+  }
+  run();
+})();
+</script>
+</body>
+</html>

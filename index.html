@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0284c7" />
+<title>Protech Organo Foods — Production</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230ea5e9'/%3E%3Cpath d='M2 16h28M16 2a20 20 0 010 28M16 2a20 20 0 000 28M5 9h22M5 23h22' stroke='%23fff' stroke-width='1.4' fill='none'/%3E%3C/svg%3E" />
+<style>
+  /* ---- Design tokens ---- */
+  :root{
+    --primary:#0ea5e9; --primary-dark:#0284c7; --success:#10b981; --danger:#ef4444;
+    --ink:#0f172a; --muted:#64748b; --line:#e2e8f0; --bg:#f1f5f9; --card:#ffffff;
+    --radius:16px; --shadow:0 1px 3px rgba(15,23,42,.06),0 8px 24px rgba(15,23,42,.06);
+    --tap:56px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased;
+    min-height:100dvh;
+  }
+  button{font-family:inherit; cursor:pointer; border:none; background:none}
+  .hidden{display:none !important}
+
+  /* ---- Logo ---- */
+  .logo{display:flex; align-items:center; gap:12px}
+  .logo .mark{width:40px; height:40px; flex:0 0 40px}
+  .logo .txt{line-height:1.1}
+  .logo .txt b{display:block; font-size:15px; letter-spacing:.2px}
+  .logo .txt span{display:block; font-size:10px; color:var(--muted); letter-spacing:1.5px; text-transform:uppercase}
+
+  /* ---- Login ---- */
+  #login{
+    min-height:100dvh; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:24px; gap:28px;
+    background:radial-gradient(1200px 600px at 50% -10%, #e0f2fe 0%, var(--bg) 60%);
+  }
+  #login .brand{display:flex; flex-direction:column; align-items:center; gap:14px; text-align:center}
+  #login .brand .mark{width:72px; height:72px}
+  #login .brand h1{margin:0; font-size:20px; letter-spacing:.3px}
+  #login .brand p{margin:0; font-size:12px; color:var(--muted); letter-spacing:2px; text-transform:uppercase}
+  .pinpad{width:100%; max-width:340px; background:var(--card); border-radius:24px; padding:24px; box-shadow:var(--shadow)}
+  .pin-label{font-size:13px; color:var(--muted); text-align:center; margin-bottom:14px}
+  .pin-dots{display:flex; gap:14px; justify-content:center; margin-bottom:22px}
+  .pin-dots i{width:14px; height:14px; border-radius:50%; background:var(--line); transition:.15s}
+  .pin-dots i.on{background:var(--primary); transform:scale(1.05)}
+  .pin-dots.err i{background:var(--danger); animation:shake .35s}
+  @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}
+  .keys{display:grid; grid-template-columns:repeat(3,1fr); gap:12px}
+  .keys button{
+    height:64px; border-radius:16px; font-size:24px; font-weight:600; background:#f8fafc;
+    color:var(--ink); border:1px solid var(--line); transition:.1s;
+  }
+  .keys button:active{background:#e0f2fe; transform:scale(.97)}
+  .keys button.alt{font-size:14px; color:var(--muted); font-weight:500}
+  .hint{font-size:11px; color:var(--muted); text-align:center; max-width:340px; line-height:1.7}
+  .hint code{background:#fff; border:1px solid var(--line); border-radius:6px; padding:1px 6px; margin:0 2px; color:var(--primary-dark)}
+
+  /* ---- App shell ---- */
+  #app{min-height:100dvh; display:flex; flex-direction:column}
+  .topbar{
+    position:sticky; top:0; z-index:10; background:var(--card); border-bottom:1px solid var(--line);
+    display:flex; align-items:center; justify-content:space-between; padding:12px 16px; gap:12px;
+    padding-top:max(12px,env(safe-area-inset-top));
+  }
+  .role-badge{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted)}
+  .role-badge b{color:var(--ink); font-size:13px}
+  .role-badge .dot{width:8px; height:8px; border-radius:50%; background:var(--success)}
+  .icon-btn{width:40px; height:40px; border-radius:12px; display:grid; place-items:center; color:var(--muted); border:1px solid var(--line); background:#fff}
+  .icon-btn:active{background:#f1f5f9}
+  main{flex:1; padding:20px 16px 40px; max-width:920px; width:100%; margin:0 auto}
+
+  .page-head{margin-bottom:18px}
+  .page-head h2{margin:0 0 4px; font-size:22px}
+  .page-head p{margin:0; color:var(--muted); font-size:13px}
+
+  .tiles{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:14px}
+  .tile{
+    background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:18px;
+    display:flex; flex-direction:column; gap:12px; text-align:left; min-height:120px;
+    transition:.12s; box-shadow:var(--shadow);
+  }
+  .tile:active{transform:scale(.98)}
+  .tile .ic{width:44px; height:44px; border-radius:12px; display:grid; place-items:center; background:#e0f2fe; color:var(--primary-dark); font-size:22px}
+  .tile .nm{font-weight:600; font-size:15px}
+  .tile .ds{font-size:12px; color:var(--muted); margin-top:-6px}
+
+  .card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow)}
+  .stub{display:flex; flex-direction:column; align-items:center; gap:10px; text-align:center; padding:40px 20px; color:var(--muted)}
+  .stub .big{font-size:34px}
+  .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; height:48px; padding:0 20px; border-radius:12px; font-weight:600; font-size:15px}
+  .btn-primary{background:var(--primary); color:#fff}
+  .btn-primary:active{background:var(--primary-dark)}
+  .btn-ghost{background:#fff; border:1px solid var(--line); color:var(--ink)}
+  .back{display:inline-flex; align-items:center; gap:6px; color:var(--primary-dark); font-size:14px; font-weight:600; margin-bottom:14px}
+  .view-only-pill{font-size:11px; font-weight:700; color:var(--primary-dark); background:#e0f2fe; padding:3px 10px; border-radius:999px; text-transform:uppercase; letter-spacing:.5px}
+
+  /* connection status chip */
+  .conn{display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600; padding:4px 9px; border-radius:999px; border:1px solid var(--line); color:var(--muted); white-space:nowrap}
+  .conn .cdot{width:7px; height:7px; border-radius:50%; background:var(--muted)}
+  .conn[data-s="loading"]{color:#b45309; border-color:#fde68a; background:#fffbeb} .conn[data-s="loading"] .cdot{background:#f59e0b; animation:pulse 1s infinite}
+  .conn[data-s="online"]{color:#047857; border-color:#a7f3d0; background:#ecfdf5} .conn[data-s="online"] .cdot{background:var(--success)}
+  .conn[data-s="offline"]{color:#b91c1c; border-color:#fecaca; background:#fef2f2} .conn[data-s="offline"] .cdot{background:var(--danger)}
+  .conn[data-s="no-key"]{color:#475569; border-color:var(--line); background:#f8fafc} .conn[data-s="no-key"] .cdot{background:#94a3b8}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+  .chip{display:inline-flex; align-items:center; font-size:11px; font-weight:600; color:var(--primary-dark); background:#e0f2fe; padding:2px 9px; border-radius:999px}
+  .chip.gray{color:#475569; background:#f1f5f9}
+  .chip.green{color:#047857; background:#ecfdf5}
+  .card+.card{margin-top:0}
+
+  /* lot list */
+  .lotrow{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px; background:var(--card); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow); width:100%; text-align:left}
+  .lotrow:active{transform:scale(.99)}
+  .lotrow .ln{font-weight:700; font-size:16px}
+  .lotrow .meta{font-size:12px; color:var(--muted); margin-top:3px}
+  .lotrow .arr{color:#cbd5e1}
+
+  /* search */
+  .search{width:100%; height:46px; border:1px solid var(--line); border-radius:12px; padding:0 14px; font-size:15px; background:#fff; margin-bottom:14px}
+  .search:focus{outline:none; border-color:var(--primary); box-shadow:0 0 0 3px #e0f2fe}
+
+  /* timeline */
+  .tl{position:relative; margin-left:8px; padding-left:24px; border-left:2px solid var(--line)}
+  .tl-stage{position:relative; margin-bottom:22px}
+  .tl-stage:last-child{margin-bottom:0}
+  .tl-dot{position:absolute; left:-33px; top:2px; width:30px; height:30px; border-radius:50%; background:#e0f2fe; border:2px solid #fff; box-shadow:0 0 0 2px var(--line); display:grid; place-items:center; font-size:15px}
+  .tl-stage.done .tl-dot{background:#dcfce7; box-shadow:0 0 0 2px #86efac}
+  .tl-stage h3{margin:0 0 2px; font-size:15px}
+  .tl-stage .cnt{font-size:12px; color:var(--muted)}
+  .entry{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; margin-top:10px; box-shadow:var(--shadow)}
+  .entry .et{font-weight:600; font-size:14px; display:flex; justify-content:space-between; gap:8px; align-items:baseline}
+  .entry .ew{font-size:11px; color:var(--muted); font-weight:500; white-space:nowrap}
+  .entry .kv{display:grid; grid-template-columns:auto 1fr; gap:2px 12px; margin-top:8px; font-size:13px}
+  .entry .kv dt{color:var(--muted)}
+  .entry .kv dd{margin:0; color:var(--ink)}
+  .entry .none-fields{font-size:12px;color:var(--muted);margin-top:6px}
+  .thumbs{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px}
+  .thumb{width:84px; height:84px; border-radius:10px; object-fit:cover; border:1px solid var(--line); cursor:pointer; background:#f1f5f9}
+  .fmt-tag{font-size:10px; color:var(--muted); border:1px solid var(--line); border-radius:6px; padding:1px 6px; margin-left:6px; font-weight:600}
+
+  /* lightbox */
+  .lightbox{position:fixed; inset:0; z-index:100; background:rgba(15,23,42,.9); display:grid; place-items:center; padding:20px}
+  .lightbox img{max-width:100%; max-height:100%; border-radius:12px}
+  .lightbox .x{position:absolute; top:16px; right:16px; width:44px; height:44px; border-radius:50%; background:rgba(255,255,255,.15); color:#fff; font-size:22px}
+
+  /* lot header summary */
+  .lothead{display:flex; flex-direction:column; gap:6px; margin-bottom:18px}
+  .lothead .big{font-size:24px; font-weight:800; letter-spacing:.5px}
+  .lothead .tags{display:flex; flex-wrap:wrap; gap:6px}
+  .trace-link{display:inline-flex; align-items:center; gap:7px; align-self:flex-start; margin-top:4px; padding:9px 14px; border:1px solid var(--line); border-radius:10px; background:#fff; color:var(--primary-dark); font-size:13px; font-weight:600; text-decoration:none}
+  .trace-link:active{background:#f0f9ff}
+
+  /* ---- stage forms ---- */
+  .form{display:flex; flex-direction:column; gap:0}
+  .form-head{display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:16px}
+  .form-head h3{margin:0; font-size:18px; font-weight:700}
+  .form-head .fmt{font-size:11px; color:var(--muted); border:1px solid var(--line); border-radius:6px; padding:2px 8px; font-weight:600; white-space:nowrap}
+  .fgrid{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+  .fgrid .full{grid-column:1 / -1}
+  @media(max-width:480px){ .fgrid{grid-template-columns:1fr} }
+  .fld{display:flex; flex-direction:column; gap:6px}
+  .fld>label{font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.4px}
+  .fld input, .fld select, .fld textarea{
+    font-family:inherit; font-size:15px; color:var(--ink); background:#fff;
+    border:1px solid var(--line); border-radius:12px; padding:12px 14px; min-height:48px; width:100%;
+    transition:border-color .15s, box-shadow .15s; -webkit-appearance:none; appearance:none;
+  }
+  .fld textarea{min-height:80px; resize:vertical}
+  .fld input:focus, .fld select:focus, .fld textarea:focus{
+    outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(14,165,233,.15);
+  }
+  .fld select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 12px center; padding-right:40px}
+  .fld .hint{font-size:11px; color:var(--muted); font-weight:500; text-transform:none; letter-spacing:0}
+  .fld.entered>label{color:var(--primary-dark)}
+  .fld.entered>label::after{content:" · entered"; font-weight:600; color:var(--muted); font-size:10px}
+  /* checkbox row */
+  .checks{display:flex; flex-wrap:wrap; gap:10px}
+  .chk{display:inline-flex; align-items:center; gap:8px; border:1px solid var(--line); border-radius:12px; padding:10px 14px; min-height:48px; font-size:14px; font-weight:600; color:var(--ink); background:#fff; cursor:pointer; user-select:none}
+  .chk input{width:20px; height:20px; accent-color:var(--primary); margin:0}
+  .chk.on{border-color:var(--primary); background:#f0f9ff}
+  /* photo input */
+  .photo-field{display:flex; flex-direction:column; gap:10px}
+  .photo-pick{display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:48px; border:1.5px dashed var(--line); border-radius:12px; color:var(--muted); font-weight:600; font-size:14px; background:#fafcff}
+  .photo-pick:active{background:#f0f9ff}
+  .photo-prev{width:100px; height:100px; border-radius:12px; object-fit:cover; border:1px solid var(--line)}
+  .form-actions{display:flex; gap:10px; margin-top:20px}
+  .form-actions .btn{flex:1}
+  .btn[disabled]{opacity:.55; pointer-events:none}
+  .err-msg{color:var(--danger); font-size:13px; font-weight:600; margin-top:12px}
+  /* toast */
+  .toast{position:fixed; left:50%; bottom:28px; transform:translateX(-50%) translateY(20px); z-index:200;
+    background:var(--ink); color:#fff; padding:14px 22px; border-radius:14px; font-weight:600; font-size:14px;
+    box-shadow:0 8px 30px rgba(15,23,42,.3); opacity:0; transition:opacity .25s, transform .25s; max-width:90vw}
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+  .toast.ok{background:#065f46} .toast.bad{background:#991b1b}
+  /* simple list rows (manager summaries) */
+  .srow{display:flex; justify-content:space-between; align-items:center; gap:12px; padding:14px 0; border-bottom:1px solid var(--line)}
+  .srow:last-child{border-bottom:none}
+  .srow .l{font-weight:600} .srow .s{font-size:13px; color:var(--muted)}
+  .srow .r{text-align:right; font-weight:700}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN (self-contained, no network) ============ -->
+<section id="login">
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
+      <circle cx="32" cy="32" r="30" fill="#0ea5e9"/>
+      <g stroke="#fff" stroke-width="2" fill="none" opacity=".95">
+        <circle cx="32" cy="32" r="30"/>
+        <path d="M2 32h60M32 2c12 9 12 51 0 60M32 2C20 11 20 53 32 62M8 16h48M8 48h48"/>
+      </g>
+    </svg>
+    <div>
+      <h1>PROTECH ORGANO FOODS</h1>
+      <p>Production &amp; Traceability</p>
+    </div>
+  </div>
+
+  <div class="pinpad">
+    <div class="pin-label">Enter your PIN</div>
+    <div class="pin-dots" id="dots"><i></i><i></i><i></i><i></i></div>
+    <div class="keys" id="keys">
+      <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+      <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+      <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+      <button class="alt" data-k="clear">Clear</button>
+      <button data-k="0">0</button>
+      <button class="alt" data-k="back">⌫</button>
+    </div>
+  </div>
+
+  <div class="hint">
+    Floor roles sign in with their 4-digit PIN.<br/>
+    <code>1111</code>Receiving <code>2222</code>Peeling <code>3333</code>Production <code>4444</code>QC <code>5555</code>Office <code>0000</code>Manager
+  </div>
+</section>
+
+<!-- ============ APP SHELL ============ -->
+<section id="app" class="hidden">
+  <header class="topbar">
+    <div class="logo">
+      <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
+        <circle cx="32" cy="32" r="30" fill="#0ea5e9"/>
+        <g stroke="#fff" stroke-width="2.2" fill="none" opacity=".95">
+          <circle cx="32" cy="32" r="30"/>
+          <path d="M2 32h60M32 2c12 9 12 51 0 60M32 2C20 11 20 53 32 62M8 16h48M8 48h48"/>
+        </g>
+      </svg>
+      <div class="txt"><b>PROTECH</b><span>Organo Foods</span></div>
+    </div>
+    <div style="display:flex; align-items:center; gap:10px">
+      <span class="conn" id="connStatus" data-s="idle" title="Data connection"><span class="cdot"></span><span id="connLabel">—</span></span>
+      <div class="role-badge"><span class="dot"></span><div><b id="roleName">—</b></div></div>
+      <button class="icon-btn" id="logout" title="Log out">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+      </button>
+    </div>
+  </header>
+  <main id="main"><!-- views render here --></main>
+</section>
+
+<!-- config + data layer: local files, never block login; CDN loads lazily after login -->
+<script src="config.js"></script>
+<script src="db.js"></script>
+<script>
+/* =====================================================================
+   PROTECH PWA — core shell (Step 1)
+   Login + role routing run with ZERO network dependency.
+   Supabase + stage forms are layered on in later build steps.
+   ===================================================================== */
+(function(){
+  "use strict";
+
+  // ---- Role config (PIN -> role). Drives login + home tiles. ----
+  const ROLES = {
+    "0000": { id:"manager",  name:"Manager",       viewOnly:true,
+      tiles:[
+        {k:"cockpit",  ic:"📊", nm:"Cockpit",          ds:"KPIs: cost, value, yield"},
+        {k:"cost",     ic:"💡", nm:"Daily Costs",       ds:"Power, labour, cost/kg"},
+        {k:"economics",ic:"📈", nm:"Lot Economics",     ds:"Value, glaze variance"},
+        {k:"buyers",   ic:"🌍", nm:"Buyer Analytics",   ds:"Export value by buyer"},
+        {k:"charges",  ic:"🧾", nm:"Rate Card",         ds:"Process charges"},
+        {k:"stock", ic:"📦", nm:"Stock on hand",   ds:"Cold-store holdings"},
+        {k:"orderbook",  ic:"📋", nm:"Order Book",     ds:"Pending orders + value"},
+        {k:"shipped",    ic:"✅", nm:"Shipped",        ds:"Shipment history"},
+        {k:"projections",ic:"🎯", nm:"Projections",    ds:"Required vs ready vs short"},
+        {k:"plan",  ic:"📋", nm:"Production Plan", ds:"Live progress per buyer"},
+        {k:"lots",  ic:"🦐", nm:"Lots & Timeline", ds:"Full lifecycle + photos"},
+        {k:"temps", ic:"🌡️", nm:"Temperatures",    ds:"Cold-chain log"},
+        {k:"yield", ic:"⚖️", nm:"Yield per Lot",    ds:"Peeling conversion"},
+        {k:"qc",    ic:"🔬", nm:"Glaze & Defects",  ds:"Inspection summary"},
+        {k:"docs",  ic:"📎", nm:"Documents",        ds:"Shed receipts & scans"},
+      ]},
+    "1111": { id:"receiving", name:"RM Receiving",
+      tiles:[
+        {k:"newlot",  ic:"➕", nm:"New Lot",            ds:"Auto-sequential code"},
+        {k:"arrival", ic:"🚚", nm:"Truck Arrival",      ds:"Plates, grade, boxes"},
+        {k:"shedrep", ic:"📝", nm:"Peeling Shed Report", ds:"Input vs converted, yield"},
+        {k:"shedrcpt",ic:"🧾", nm:"Shed Receipt",        ds:"Attach scanned invoice"},
+        {k:"lots",    ic:"🦐", nm:"Lots",                ds:"Browse lots"},
+      ]},
+    "2222": { id:"peeling", name:"Peeling",
+      tiles:[
+        {k:"peeling", ic:"✂️", nm:"Peeling Output", ds:"Input vs converted, yield %"},
+        {k:"lots",    ic:"🦐", nm:"Lots",           ds:"Pick a lot"},
+      ]},
+    "3333": { id:"production", name:"Production",
+      tiles:[
+        {k:"planentry",ic:"📋", nm:"Daily Plan",     ds:"Set targets & workforce"},
+        {k:"plan",    ic:"🎯", nm:"Live Progress",   ds:"Packing vs plan per buyer"},
+        {k:"machine", ic:"⚙️", nm:"Machine Events", ds:"Auto duration timers"},
+        {k:"prodtemp",ic:"🌡️", nm:"Temps + Photo",  ds:"IQF / tunnel"},
+        {k:"packing", ic:"📦", nm:"Packing Status", ds:"Cases vs balance"},
+        {k:"lots",    ic:"🦐", nm:"Lots",           ds:"Browse lots"},
+      ]},
+    "4444": { id:"qc", name:"QC",
+      tiles:[
+        {k:"treatment", ic:"🧪", nm:"Treatment Log",       ds:"FMT POF/PC/004"},
+        {k:"inspection",ic:"🔬", nm:"Online Inspection",   ds:"IQF defect report"},
+        {k:"stuffing",  ic:"🧊", nm:"Depanning / Stuffing", ds:"Core temp + specs"},
+        {k:"lots",      ic:"🦐", nm:"Lots",                ds:"Browse lots"},
+      ]},
+    "5555": { id:"office", name:"Office",
+      tiles:[
+        {k:"stock",     ic:"📦", nm:"Stock on hand",  ds:"Cold-store holdings"},
+        {k:"reglaze",   ic:"🧊", nm:"Reglaze",        ds:"Draw down & re-glaze"},
+        {k:"orderbook", ic:"📋", nm:"Order Book",     ds:"Pending orders + value"},
+        {k:"neworder",  ic:"➕", nm:"New / Edit Order",ds:"Create or update a shipment"},
+        {k:"shipped",   ic:"✅", nm:"Shipped",        ds:"Shipment history"},
+        {k:"projections",ic:"🎯", nm:"Projections",   ds:"Required vs ready vs short"},
+        {k:"inventory", ic:"🏬", nm:"Inventory In",   ds:"Record stock in"},
+        {k:"dispatch",  ic:"🚢", nm:"Dispatch",       ds:"Container loadout"},
+        {k:"lots",      ic:"🦐", nm:"Lots",           ds:"Browse lots"},
+      ]},
+  };
+
+  const App = window.App = {
+    role:null, pinKey:null, ROLES,
+    // later steps register view renderers here: App.views["treatment"] = fn(host)
+    views:{},
+  };
+
+  // ---------------- LOGIN ----------------
+  const loginEl = document.getElementById("login");
+  const appEl   = document.getElementById("app");
+  const dotsEl  = document.getElementById("dots");
+  let buffer = "";
+
+  function renderDots(){
+    [...dotsEl.children].forEach((d,i)=> d.classList.toggle("on", i < buffer.length));
+  }
+  function rejectPin(){
+    dotsEl.classList.add("err");
+    setTimeout(()=>{ dotsEl.classList.remove("err"); buffer=""; renderDots(); }, 380);
+  }
+  function pressKey(k){
+    if(k==="clear"){ buffer=""; renderDots(); return; }
+    if(k==="back"){ buffer=buffer.slice(0,-1); renderDots(); return; }
+    if(buffer.length>=4) return;
+    buffer+=k; renderDots();
+    if(buffer.length===4){
+      const role = ROLES[buffer];
+      if(role){ const key=buffer; buffer=""; renderDots(); login(key); }
+      else { rejectPin(); }
+    }
+  }
+  document.getElementById("keys").addEventListener("click", e=>{
+    const b=e.target.closest("button"); if(b) pressKey(b.dataset.k);
+  });
+  window.addEventListener("keydown", e=>{
+    if(appEl.classList.contains("hidden")===false) return; // only on login screen
+    if(/^[0-9]$/.test(e.key)) pressKey(e.key);
+    else if(e.key==="Backspace") pressKey("back");
+    else if(e.key==="Escape") pressKey("clear");
+  });
+
+  // ---- connection status chip (reflects PROTECH_DB) ----
+  const CONN_LABEL = { idle:"…", loading:"Connecting", online:"Online", offline:"Offline", "no-key":"Demo" };
+  function paintConn(s){
+    const chip=document.getElementById("connStatus");
+    chip.dataset.s = s;
+    document.getElementById("connLabel").textContent = CONN_LABEL[s] || s;
+    chip.title = s==="no-key" ? "No anon key set — data features disabled"
+              : s==="offline" ? "Could not reach Supabase — UI still works"
+              : "Data connection: " + s;
+  }
+  function startData(){
+    const DB = window.PROTECH_DB;
+    if(!DB){ paintConn("no-key"); return; }
+    DB.onStatus = paintConn;
+    paintConn(DB.status);
+    DB.init();                 // fire-and-forget; login never waits on this
+  }
+
+  function login(pinKey){
+    App.pinKey=pinKey; App.role=ROLES[pinKey];
+    try{ sessionStorage.setItem("protech_pin", pinKey); }catch(_){}
+    document.getElementById("roleName").textContent = App.role.name;
+    loginEl.classList.add("hidden");
+    appEl.classList.remove("hidden");
+    home();
+    startData();
+  }
+  function logout(){
+    App.role=null; App.pinKey=null;
+    try{ sessionStorage.removeItem("protech_pin"); }catch(_){}
+    appEl.classList.add("hidden");
+    loginEl.classList.remove("hidden");
+    renderDots();
+  }
+  document.getElementById("logout").addEventListener("click", logout);
+
+  // ---------------- ROUTING ----------------
+  const main = document.getElementById("main");
+
+  App.home = home;
+  function home(){
+    const r = App.role;
+    main.innerHTML = "";
+    const head = document.createElement("div");
+    head.className="page-head";
+    head.innerHTML = `<h2>${r.name}</h2><p>${r.viewOnly
+      ? 'View-only access across all production stages'
+      : 'Select a task to begin'}</p>`;
+    if(r.viewOnly){
+      const pill=document.createElement("span"); pill.className="view-only-pill"; pill.textContent="View only";
+      head.querySelector("h2").appendChild(document.createTextNode(" "));
+      head.querySelector("h2").appendChild(pill);
+    }
+    main.appendChild(head);
+
+    const grid=document.createElement("div"); grid.className="tiles";
+    r.tiles.forEach(t=>{
+      const b=document.createElement("button"); b.className="tile";
+      b.innerHTML=`<div class="ic">${t.ic}</div><div class="nm">${t.nm}</div><div class="ds">${t.ds}</div>`;
+      b.addEventListener("click", ()=>openView(t.k, t.nm));
+      grid.appendChild(b);
+    });
+    main.appendChild(grid);
+  }
+
+  App.openView = openView;
+  function openView(key, title){
+    const renderer = App.views[key];
+    main.innerHTML = "";
+    const back=document.createElement("button"); back.className="back";
+    back.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg> Back';
+    back.addEventListener("click", home);
+    main.appendChild(back);
+
+    if(typeof renderer === "function"){
+      const host=document.createElement("div"); main.appendChild(host);
+      renderer(host, App);
+    } else {
+      const card=document.createElement("div"); card.className="card";
+      card.innerHTML=`<div class="stub"><div class="big">🚧</div>
+        <div style="font-weight:600;color:var(--ink)">${title}</div>
+        <div>This stage form is wired in the next build step.</div></div>`;
+      main.appendChild(card);
+    }
+  }
+
+  // restore session if reloaded
+  try{
+    const saved = sessionStorage.getItem("protech_pin");
+    if(saved && ROLES[saved]) login(saved);
+  }catch(_){}
+})();
+</script>
+<!-- stage views (registered on App.views); loaded after core shell -->
+<script src="views.js"></script>
+<!-- stage data-entry forms (registered on App.views); loaded after views -->
+<script src="forms.js"></script>
+<!-- stock + reglaze (draw-down loop); loaded after forms -->
+<script src="stock.js"></script>
+<!-- shipments / export order book; loaded after stock -->
+<script src="shipments.js"></script>
+<!-- management / controlling views (Manager only); loaded last -->
+<script src="management.js"></script>
+</body>
+</html>
