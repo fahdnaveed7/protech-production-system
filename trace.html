@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#0284c7" />
 <title>Lot Traceability — Protech Organo Foods</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230ea5e9'/%3E%3Cpath d='M2 16h28M16 2a20 20 0 010 28M16 2a20 20 0 000 28M5 9h22M5 23h22' stroke='%23fff' stroke-width='1.4' fill='none'/%3E%3C/svg%3E" />
+<link rel="icon" type="image/png" href="favicon.png" />
 <style>
   :root{
     --primary:#0ea5e9; --primary-dark:#0284c7; --success:#10b981; --danger:#ef4444;
@@ -20,7 +20,7 @@
 
   /* top brand bar */
   .bar{display:flex; align-items:center; gap:12px; margin-bottom:18px}
-  .bar .mark{width:40px; height:40px; flex:0 0 40px}
+  .bar .mark{width:40px; height:40px; flex:0 0 40px; object-fit:contain}
   .bar h1{margin:0; font-size:16px; font-weight:800; letter-spacing:.5px}
   .bar p{margin:0; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:1px}
 
@@ -66,13 +66,7 @@
 <body>
 <div class="wrap">
   <div class="bar">
-    <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
-      <circle cx="32" cy="32" r="30" fill="#0ea5e9"/>
-      <g stroke="#fff" stroke-width="2" fill="none" opacity=".95">
-        <circle cx="32" cy="32" r="30"/>
-        <path d="M2 32h60M32 2c12 9 12 51 0 60M32 2C20 11 20 53 32 62M8 16h48M8 48h48"/>
-      </g>
-    </svg>
+    <img class="mark" src="logo-icon.png" alt="Protech Organo Foods" />
     <div>
       <h1>PROTECH ORGANO FOODS</h1>
       <p>Production &amp; Traceability</p>
