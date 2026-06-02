@@ -32,15 +32,21 @@
       const wrap = el("div",{class:"fld full"});
       wrap.appendChild(el("label",{text:def.label}));
       const row = el("div",{class:"checks"});
+      const setters = {}, itemNodes = {};
+      const truthy = (val)=> val===true || val==="true" || val===1 || val==="1" ||
+                             (typeof val==="string" && /^(y|yes|✓|tick|present)$/i.test(val.trim()));
       const boxes = def.items.map(it=>{
         const cb = el("input",{type:"checkbox"});
         const lab = el("label",{class:"chk"},[cb, document.createTextNode(" "+it.label)]);
         cb.addEventListener("change", ()=> lab.classList.toggle("on", cb.checked));
+        // scan / edit: set this single additive's checkbox by its column key
+        setters[it.k] = (val)=>{ const on = truthy(val); cb.checked = on; lab.classList.toggle("on", on); };
+        itemNodes[it.k] = lab;   // amber-flag the specific additive, not the whole row
         row.appendChild(lab);
         return { k:it.k, cb };
       });
       wrap.appendChild(row);
-      return { node:wrap, collect:(v)=> boxes.forEach(b=> v[b.k]=b.cb.checked) };
+      return { node:wrap, collect:(v)=> boxes.forEach(b=> v[b.k]=b.cb.checked), setters, itemNodes };
     }
     if(def.type==="computed"){
       const wrap = el("div",{class:"fld"+(def.full?" full":"")});
@@ -160,6 +166,7 @@
       scanInput = el("input",{type:"file", accept:"image/*", capture:"environment", style:"display:none"});
       scanBtn = el("button",{class:"btn btn-scan", type:"button",
         text:"📸 Scan paper form", onclick:()=> scanInput.click()});
+      bar.appendChild(scanInput);
       bar.appendChild(scanBtn);
       if(!editing){
         bar.appendChild(el("button",{class:"btn btn-ghost", type:"button",
@@ -183,8 +190,10 @@
     opts.fields.forEach(def=>{
       const f = makeField(def, { lots });
       grid.appendChild(f.node);
-      nodes[def.k] = f.node;
+      if(def.k) nodes[def.k] = f.node;
       if(f.set) setters[def.k] = f.set;
+      if(f.setters) Object.assign(setters, f.setters);     // multi-key (checks)
+      if(f.itemNodes) Object.assign(nodes, f.itemNodes);   // per-item amber target
       if(f.collect) collectors.push(f.collect);
       if(f.file) fileFields.push({ k:def.k, read:f.file });
       if(f.recompute) computeds.push(f.recompute);
@@ -394,6 +403,7 @@
   // 5A — Peeling Shed Report
   App.views.shedrep = formView({
     title:"Peeling Shed Report", stage:"peeling", table:"peeling_shed_reports", fmt:"FORM 5A",
+    formType:"peeling_shed_report",
     intro:"Shrimp lots only. Fish & squid lots skip peeling — leave this stage blank for them.",
     successMsg:"Shed report saved ✓",
     fields:[
@@ -649,6 +659,7 @@
   // 5B — Treatment Log (FMT POF/PC/004) — one row per tub, additives presence-only
   App.views.treatment = formView({
     title:"Treatment Log", stage:"treatment", table:"treatment_logs", fmt:"FMT POF/PC/004",
+    formType:"treatment_log",
     intro:"Shrimp soaking/treatment only. Fish & squid lots are not soaked — skip this stage for them.",
     successMsg:"Treatment log saved ✓",
     fields:[
@@ -740,7 +751,46 @@
       { k:"verified_by", label:"Verified by", type:"text" },
     ];
     const headCollect = [];
-    headFields.forEach(def=>{ const f=makeField(def,{lots}); headGrid.appendChild(f.node); headCollect.push(f.collect); });
+    const headSetters = {}, headNodes = {};
+    headFields.forEach(def=>{
+      const f=makeField(def,{lots});
+      headGrid.appendChild(f.node);
+      headCollect.push(f.collect);
+      if(f.set) headSetters[def.k] = f.set;
+      headNodes[def.k] = f.node;
+    });
+
+    // ---- scan bar (photograph the 9-sample sheet to auto-fill) ----
+    let inspExtraction = null, inspScanned = false;
+    if(App.scan && App.scan.enabled()){
+      const bar = el("div",{class:"scan-bar", style:"margin-bottom:12px"});
+      const scanInput = el("input",{type:"file", accept:"image/*", capture:"environment", style:"display:none"});
+      const scanBtn = el("button",{class:"btn btn-scan", type:"button",
+        text:"📸 Scan paper form", onclick:()=> scanInput.click()});
+      bar.appendChild(scanInput);
+      bar.appendChild(scanBtn);
+      headForm.appendChild(bar);
+      headForm.appendChild(el("div",{class:"hint",style:"text-transform:none;margin:-4px 0 12px",
+        text:"Photograph the inspection sheet to auto-fill the header and all sample columns. Check anything highlighted amber."}));
+      scanInput.addEventListener("change", async ()=>{
+        const f = scanInput.files[0]; if(!f) return;
+        errEl.classList.add("hidden");
+        scanBtn.disabled = true; scanBtn.textContent = "📸 Reading…";
+        try{
+          const res = await App.scan.extract("online_inspection", f, { lot:null });
+          applyInspExtraction(res);
+          toast("Scanned — review highlighted cells", "ok");
+          if(App.scan.autoCommit()) btn.click();
+        }catch(e){
+          errEl.textContent = "Scan failed: " + (e.message||e);
+          errEl.classList.remove("hidden");
+        }finally{
+          scanBtn.disabled = false; scanBtn.textContent = "📸 Scan paper form";
+          scanInput.value = "";
+        }
+      });
+    }
+
     headForm.appendChild(headGrid);
     headCard.appendChild(headForm);
     host.appendChild(headCard);
@@ -787,6 +837,45 @@
     sampleCard.appendChild(scroll);
     host.appendChild(sampleCard);
 
+    // ---- apply a scan extraction to header + every sample column ----
+    function applyInspExtraction(res){
+      const fields = res.fields || {};
+      const conf   = res.confidence || {};
+      const thr    = App.scan.threshold();
+      Object.keys(headSetters).forEach(k=>{
+        headNodes[k] && headNodes[k].classList.remove("lowconf");
+        if(k in fields && fields[k]!=null && fields[k]!==""){
+          headSetters[k](fields[k]);
+          const c = conf[k];
+          if(typeof c==="number" && c<thr && headNodes[k]) headNodes[k].classList.add("lowconf");
+        }
+      });
+      const samples = Array.isArray(fields.samples) ? fields.samples : [];
+      const sConf   = (conf && Array.isArray(conf.samples)) ? conf.samples : [];
+      samples.forEach((s, i)=>{
+        if(!s || typeof s!=="object") return;
+        const col = (typeof s.sample_index==="number" ? s.sample_index : (i+1)) - 1;
+        if(col<0 || col>=COLS) return;
+        const cc = sConf[i] || {};
+        SAMPLE_ROWS.forEach(([key])=>{
+          const inp = cells[key] && cells[key][col];
+          if(!inp) return;
+          inp.classList.remove("lowconf");
+          if(key in s && s[key]!=null && s[key]!==""){
+            inp.value = s[key];
+            const cv = cc[key];
+            if(typeof cv==="number" && cv<thr) inp.classList.add("lowconf");
+          }
+        });
+      });
+      inspExtraction = {
+        source_photo_url: res.photo_url || null,
+        extraction_json:  { fields, confidence: conf, raw_text: res.raw_text||"" },
+        extraction_confidence: conf,
+      };
+      inspScanned = true;
+    }
+
     // ---- submit ----
     const errEl = el("div",{class:"err-msg hidden"});
     host.appendChild(errEl);
@@ -812,6 +901,16 @@
         samples.push(s);
       }
       if(!samples.length){ errEl.textContent="Set a Lot on at least one sample column."; errEl.classList.remove("hidden"); return; }
+
+      // scan audit metadata on the report header (samples inherit via report_id)
+      if(inspScanned){
+        header.entry_mode = "scan";
+        if(inspExtraction){
+          header.source_photo_url      = inspExtraction.source_photo_url;
+          header.extraction_json       = inspExtraction.extraction_json;
+          header.extraction_confidence = inspExtraction.extraction_confidence;
+        }
+      }
 
       btn.disabled=true; btn.textContent="Saving…";
       try{

@@ -33,6 +33,22 @@
               .filter(Boolean).join("  ·  "),
       }),
     },
+    peeling_shed_report: {
+      table:"peeling_shed_reports", label:"Peeling Shed Report", viewKey:"shedrep", stage:"peeling",
+      summary:(r)=>({
+        title:(r.lot_number||"—") + (r.report_no? " · #"+r.report_no : ""),
+        sub:[r.date, r.species, r.yield_pct!=null? r.yield_pct+"% yield":null]
+              .filter(Boolean).join("  ·  "),
+      }),
+    },
+    treatment_log: {
+      table:"treatment_logs", label:"Treatment Log", viewKey:"treatment", stage:"treatment",
+      summary:(r)=>({
+        title:(r.lot_number||"—") + (r.tub_no? " · tub "+r.tub_no : ""),
+        sub:[r.date, r.product, r.grade, r.pct_gain!=null? r.pct_gain+"% gain":null]
+              .filter(Boolean).join("  ·  "),
+      }),
+    },
   };
 
   const threshold = ()=> Number(CFG().CONFIDENCE_THRESHOLD) || 0.7;
