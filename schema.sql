@@ -57,6 +57,11 @@ create table if not exists public.peeling_shed_reports (
   section_in_charge   text,
   production_in_charge text,
   photo_url       text,
+  -- scan-to-fill audit (see scan.js / extract-form Edge Function)
+  entry_mode      text default 'manual',          -- manual | scan | scan_edited
+  source_photo_url text,                           -- the photographed paper form
+  extraction_json  jsonb,                          -- full model read for audit
+  extraction_confidence jsonb,                     -- { column: 0..1 } per-field confidence
   created_at      timestamptz default now(),
   created_by_role text
 );
@@ -74,6 +79,11 @@ create table if not exists public.shed_receipts (
   total_kg     numeric,
   notes        text,
   photo_url    text,                              -- the scanned receipt image
+  -- scan-to-fill audit (see scan.js / extract-form Edge Function)
+  entry_mode      text default 'manual',          -- manual | scan | scan_edited
+  source_photo_url text,                           -- the photographed paper form
+  extraction_json  jsonb,                          -- full model read for audit
+  extraction_confidence jsonb,                     -- { column: 0..1 } per-field confidence
   created_at   timestamptz default now(),
   created_by_role text
 );
@@ -124,6 +134,11 @@ create table if not exists public.treatment_logs (
   additive_salt     boolean default false,
   checked_by        text,
   verified_by       text,
+  -- scan-to-fill audit (see scan.js / extract-form Edge Function)
+  entry_mode        text default 'manual',         -- manual | scan | scan_edited
+  source_photo_url  text,
+  extraction_json   jsonb,
+  extraction_confidence jsonb,
   created_at        timestamptz default now(),
   created_by_role   text
 );
@@ -181,6 +196,11 @@ create table if not exists public.online_inspection_reports (
   raw_production  text,
   checked_by      text,
   verified_by     text,
+  -- scan-to-fill audit (samples are extracted into extraction_json.samples[])
+  entry_mode      text default 'manual',           -- manual | scan | scan_edited
+  source_photo_url text,
+  extraction_json  jsonb,
+  extraction_confidence jsonb,
   created_at      timestamptz default now(),
   created_by_role text
 );

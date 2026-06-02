@@ -62,7 +62,9 @@
         if(f){ prev.src = URL.createObjectURL(f); prev.classList.remove("hidden"); pick.textContent="📷 Change photo"; }
       });
       wrap.appendChild(el("div",{class:"photo-field"},[pick, prev, file]));
-      return { node:wrap, file:()=> file.files[0]||null };
+      // set(url) shows an already-stored image (edit prefill / re-used scan shot)
+      const setPhoto = (url)=>{ if(url){ prev.src=url; prev.classList.remove("hidden"); pick.textContent="📷 Change photo"; } };
+      return { node:wrap, k:def.k, file:()=> file.files[0]||null, set:setPhoto };
     }
 
     let input;
@@ -101,7 +103,18 @@
       else if(def.type==="datetime") v[def.k] = new Date(val).toISOString();
       else v[def.k] = val;
     };
-    return { node:wrap, collect };
+    // set(val) prefills a field for scan / edit. Mirrors collect's coercions.
+    const set = (val)=>{
+      if(val==null){ input.value=""; return; }
+      if(def.type==="datetime"){
+        try{ input.value = new Date(val).toISOString().slice(0,16); }catch(_){ input.value = String(val); }
+      } else {
+        input.value = String(val);
+      }
+      // notify any computed fields listening on the form
+      input.dispatchEvent(new Event("change", { bubbles:true }));
+    };
+    return { node:wrap, k:def.k, collect, set };
   }
 
   // ---------- generic single-table form ----------
@@ -112,12 +125,24 @@
       if(!db || !db.isOnline()) return notConnected(host);
       let lots = [];
       if(opts.needLots !== false){ try{ lots = await db.listLots(); }catch(_){} }
-      buildForm(host, opts, lots);
+      // Edit mode: scan.js hands us a saved row to reopen via App.scan.pendingEdit.
+      let editRow = null;
+      if(App.scan && App.scan.pendingEdit && opts.formType &&
+         App.scan.pendingEdit.formType === opts.formType){
+        editRow = App.scan.pendingEdit.row;
+        App.scan.pendingEdit = null;
+      }
+      buildForm(host, opts, lots, editRow);
     };
   }
 
-  function buildForm(host, opts, lots){
+  const SCAN_CFG = ()=> (window.PROTECH_CONFIG && window.PROTECH_CONFIG.SCAN) || {};
+  const scanReady = (opts)=> !!(opts.formType && App.scan && App.scan.enabled() &&
+                               App.scan.CLIENT_REGISTRY[opts.formType]);
+
+  function buildForm(host, opts, lots, editRow){
     host.innerHTML = "";
+    const editing = !!(editRow && editRow.id);
     const card = el("div",{class:"card"});
     const form = el("div",{class:"form"});
     form.appendChild(el("div",{class:"form-head"},[
@@ -126,21 +151,49 @@
     ]));
     if(opts.intro) form.appendChild(el("div",{class:"hint",style:"margin:-6px 0 14px;text-transform:none",text:opts.intro}));
 
+    const errEl = el("div",{class:"err-msg hidden"});
+
+    // ---- Scan / Edit bar (only when this form is scan-enabled) ----
+    let scanInput = null, scanBtn = null;
+    if(scanReady(opts)){
+      const bar = el("div",{class:"scan-bar"});
+      scanInput = el("input",{type:"file", accept:"image/*", capture:"environment", style:"display:none"});
+      scanBtn = el("button",{class:"btn btn-scan", type:"button",
+        text:"📸 Scan paper form", onclick:()=> scanInput.click()});
+      bar.appendChild(scanBtn);
+      if(!editing){
+        bar.appendChild(el("button",{class:"btn btn-ghost", type:"button",
+          text:"✏️ Edit saved", onclick:()=> App.scan.listView(opts.formType)}));
+      }
+      form.appendChild(bar);
+      form.appendChild(el("div",{class:"hint",style:"margin:-4px 0 12px;text-transform:none",
+        text: editing
+          ? "Editing a saved record — Save updates it in place."
+          : "Photograph the sheet to auto-fill, then check anything highlighted amber."}));
+    }
+    if(editing && !scanReady(opts)){
+      form.appendChild(el("div",{class:"hint",style:"margin:-6px 0 12px;text-transform:none",
+        text:"Editing a saved record — Save updates it in place."}));
+    }
+
     const grid = el("div",{class:"fgrid"});
     const collectors=[], fileFields=[], computeds=[];
+    const setters = {};   // column -> set(val)
+    const nodes   = {};   // column -> field DOM node (for amber low-conf marking)
     opts.fields.forEach(def=>{
       const f = makeField(def, { lots });
       grid.appendChild(f.node);
+      nodes[def.k] = f.node;
+      if(f.set) setters[def.k] = f.set;
       if(f.collect) collectors.push(f.collect);
       if(f.file) fileFields.push({ k:def.k, read:f.file });
       if(f.recompute) computeds.push(f.recompute);
     });
     form.appendChild(grid);
-
-    const errEl = el("div",{class:"err-msg hidden"});
     form.appendChild(errEl);
 
-    const btn = el("button",{class:"btn btn-primary", text:opts.submitLabel||"Save record"});
+    const btn = el("button",{class:"btn btn-primary",
+      text: opts.submitLabel || (editing ? "Update record" : "Save record")});
     const cancel = el("button",{class:"btn btn-ghost", text:"Cancel", onclick:()=> App.home()});
     form.appendChild(el("div",{class:"form-actions"},[cancel, btn]));
     card.appendChild(form);
@@ -153,6 +206,57 @@
       run();
     }
 
+    // Per-save scan/edit state.
+    let extraction = null;   // { source_photo_url, extraction_json, extraction_confidence }
+    let scanned = false;     // a fresh scan filled this form
+
+    // ---- prefill on edit ----
+    if(editing){
+      Object.keys(setters).forEach(k=>{ if(editRow[k]!=null) setters[k](editRow[k]); });
+    }
+
+    // ---- apply an extraction result to the fields ----
+    function applyExtraction(res){
+      const fields = res.fields || {};
+      const conf   = res.confidence || {};
+      const thr    = App.scan.threshold();
+      Object.keys(setters).forEach(k=>{
+        nodes[k] && nodes[k].classList.remove("lowconf");
+        if(k in fields && fields[k]!=null && fields[k]!==""){
+          setters[k](fields[k]);
+          const c = conf[k];
+          if(typeof c==="number" && c < thr && nodes[k]) nodes[k].classList.add("lowconf");
+        }
+      });
+      if(res.photo_url && setters.photo_url) setters.photo_url(res.photo_url);
+      extraction = {
+        source_photo_url: res.photo_url || null,
+        extraction_json:  { fields, confidence: conf, raw_text: res.raw_text || "" },
+        extraction_confidence: conf,
+      };
+      scanned = true;
+    }
+
+    if(scanInput){
+      scanInput.addEventListener("change", async ()=>{
+        const f = scanInput.files[0]; if(!f) return;
+        errEl.classList.add("hidden");
+        scanBtn.disabled = true; scanBtn.textContent = "📸 Reading…";
+        try{
+          const res = await App.scan.extract(opts.formType, f, { lot: null });
+          applyExtraction(res);
+          toast("Scanned — review highlighted fields", "ok");
+          if(App.scan.autoCommit()) btn.click();   // TRIAL MODE: save immediately
+        }catch(e){
+          errEl.textContent = "Scan failed: " + (e.message||e);
+          errEl.classList.remove("hidden");
+        }finally{
+          scanBtn.disabled = false; scanBtn.textContent = "📸 Scan paper form";
+          scanInput.value = "";
+        }
+      });
+    }
+
     btn.addEventListener("click", async ()=>{
       errEl.classList.add("hidden");
       const values = {};
@@ -160,21 +264,51 @@
       const missing = opts.fields.filter(d=> d.required && (values[d.k]==null || values[d.k]==="")).map(d=> d.label);
       if(missing.length){ errEl.textContent = "Please fill: " + missing.join(", "); errEl.classList.remove("hidden"); return; }
 
-      btn.disabled = true; btn.textContent = "Saving…";
+      btn.disabled = true; btn.textContent = editing ? "Updating…" : "Saving…";
       try{
         for(const ff of fileFields){
           const file = ff.read();
           if(file){
             const lotForPath = values.lot_number || opts.stage || "misc";
             values[ff.k] = await DB().uploadPhoto(file, lotForPath, opts.stage || opts.table);
+          } else if(values[ff.k]==null){
+            // keep the existing/scanned image when no new file is chosen
+            if(editing && editRow[ff.k]!=null) values[ff.k] = editRow[ff.k];
+            else if(extraction && ff.k==="photo_url" && extraction.source_photo_url) values[ff.k] = extraction.source_photo_url;
           }
         }
         const row = opts.prepare ? opts.prepare(values) : values;
-        await DB().insert(opts.table, row);
-        toast(opts.successMsg || "Saved ✓", "ok");
+
+        // ---- scan / edit audit metadata (only on scan-enabled forms) ----
+        if(scanReady(opts)){
+          if(editing){
+            const prev = editRow.entry_mode || "manual";
+            row.entry_mode = (prev === "manual") ? "manual" : "scan_edited";
+          } else {
+            row.entry_mode = scanned ? "scan" : "manual";
+          }
+          if(extraction){
+            row.source_photo_url      = extraction.source_photo_url;
+            row.extraction_json       = extraction.extraction_json;
+            row.extraction_confidence = extraction.extraction_confidence;
+          } else if(editing){
+            // preserve the original audit trail when editing without re-scanning
+            if(editRow.source_photo_url!=null)      row.source_photo_url      = editRow.source_photo_url;
+            if(editRow.extraction_json!=null)       row.extraction_json       = editRow.extraction_json;
+            if(editRow.extraction_confidence!=null) row.extraction_confidence = editRow.extraction_confidence;
+          }
+        }
+
+        if(editing){
+          const { error } = await DB().client.from(opts.table).update(row).eq("id", editRow.id);
+          if(error) throw error;
+        } else {
+          await DB().insert(opts.table, row);
+        }
+        toast(opts.successMsg || (editing ? "Record updated ✓" : "Saved ✓"), "ok");
         App.home();
       }catch(e){
-        btn.disabled = false; btn.textContent = opts.submitLabel||"Save record";
+        btn.disabled = false; btn.textContent = opts.submitLabel || (editing ? "Update record" : "Save record");
         errEl.textContent = "Could not save: " + (e.message||e);
         errEl.classList.remove("hidden");
       }
@@ -284,6 +418,7 @@
   // 5D — Shed Receipt (operational: header + scanned image)
   App.views.shedrcpt = formView({
     title:"Shed Receipt", stage:"intake", table:"shed_receipts", fmt:"FORM 5D",
+    formType:"shed_receipt",
     intro:"Attach the scanned shed invoice. Costing stays operational in v1 — image is for reconciliation.",
     successMsg:"Shed receipt saved ✓",
     fields:[
