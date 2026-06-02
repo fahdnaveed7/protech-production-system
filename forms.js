@@ -652,6 +652,176 @@
     });
   };
 
+  // Frozen Output (form 144, IQF Production Report) — built per-batch.
+  // The floor adds ONE short line each time a batch comes off the freezer;
+  // the screen sums them into a live "Frozen: X kg · Y cases" total per lot,
+  // so the day's record builds itself instead of one big sheet at shift end.
+  App.views.prodout = async function(host){
+    const db = DB();
+    if(!db || !db.isOnline()) return notConnected(host);
+    let lots = []; try{ lots = await db.listLots(); }catch(_){}
+    const lotMeta = {}; lots.forEach(l=> lotMeta[l.lot_number]=l);
+
+    host.innerHTML = "";
+    const card = el("div",{class:"card"});
+    const form = el("div",{class:"form"});
+    form.appendChild(el("div",{class:"form-head"},[
+      el("h3",{text:"Frozen Output"}),
+      el("span",{class:"fmt",text:"FORM 144"}),
+    ]));
+    form.appendChild(el("div",{class:"hint",style:"margin:-6px 0 14px;text-transform:none",
+      text:"Pick a lot, then add each batch as it comes off the freezer. Just the few boxes per batch — the total adds up by itself."}));
+
+    // ---- lot selector ----
+    const lotSel = el("select");
+    [{v:"",label:"Select lot…"}].concat(lots.map(l=>({
+      v:l.lot_number, label:l.lot_number + (l.product?" · "+l.product:(l.species?" · "+l.species:"")) })))
+      .forEach(o=> lotSel.appendChild(el("option",{value:o.v}, o.label)));
+    form.appendChild(el("div",{class:"fld"},[ el("label",{text:"Lot"}), lotSel ]));
+
+    // ---- live running total for the lot ----
+    const totalBox = el("div",{style:"font-size:20px;font-weight:800;color:var(--primary-dark);padding:10px 0;letter-spacing:.3px",text:"—"});
+    form.appendChild(el("div",{class:"fld full"},[ el("label",{text:"This lot so far"}), totalBox ]));
+
+    // ---- list of batches already logged for the lot ----
+    const listWrap = el("div",{style:"display:flex;flex-direction:column;gap:8px;margin:4px 0 18px"});
+    form.appendChild(listWrap);
+
+    // ---- add-a-batch mini form ----
+    const addHead = el("div",{class:"hint",style:"text-transform:none;font-weight:700;margin:6px 0 8px",text:"Add a batch"});
+    form.appendChild(addHead);
+    const grid = el("div",{class:"fgrid"});
+    const mkNum = (label, full)=>{
+      const i = el("input",{type:"number"}); i.setAttribute("inputmode","decimal"); i.step="any";
+      grid.appendChild(el("div",{class:"fld"+(full?" full":"")},[ el("label",{text:label}), i ]));
+      return i;
+    };
+    const mkText = (label, ph)=>{
+      const i = el("input",{type:"text", placeholder:ph||""});
+      grid.appendChild(el("div",{class:"fld"},[ el("label",{text:label}), i ]));
+      return i;
+    };
+    const prodSel = el("select");
+    [{v:"",label:"Product…"}].concat((typeof PRODUCTS!=="undefined"?PRODUCTS:[]).map(p=>({v:p,label:p})))
+      .forEach(o=> prodSel.appendChild(el("option",{value:o.v}, o.label)));
+    grid.appendChild(el("div",{class:"fld"},[ el("label",{text:"Product"}), prodSel ]));
+    const gradeIn  = mkText("Grade / count","e.g. 11/15");
+    const fcountIn = mkText("Frozen count","e.g. 15ct");
+    const grossIn  = mkNum("Gross weight (kg)");
+    const glazeIn  = mkNum("Achieved glaze %");
+    const casesIn  = mkNum("No. of cases");
+    // optional / less-common
+    const netIn    = mkNum("Net weight (kg)");
+    const tglazeIn = mkNum("Target glaze %");
+    const packIn   = mkText("Packing","e.g. 1x12");
+    const looseIn  = mkNum("Loose cases");
+    form.appendChild(grid);
+
+    const errEl = el("div",{class:"err-msg hidden"});
+    form.appendChild(errEl);
+    const addBtn = el("button",{class:"btn btn-primary", text:"+ Add batch"});
+    const doneBtn = el("button",{class:"btn btn-ghost", text:"Done", onclick:()=> App.home()});
+    form.appendChild(el("div",{class:"form-actions"},[doneBtn, addBtn]));
+    card.appendChild(form);
+    host.appendChild(card);
+
+    const numOrNull = (s)=> (s==="" || s==null || isNaN(Number(s))) ? null : Number(s);
+    const fmtKg = (n)=> (Math.round(n*10)/10).toLocaleString();
+
+    let rows = [];
+    function renderList(){
+      listWrap.innerHTML = "";
+      if(!lotSel.value){ totalBox.textContent="—"; return; }
+      let kg=0, cs=0;
+      rows.forEach(r=>{ kg += Number(r.gross_weight_kg)||0; cs += Number(r.cases)||0; });
+      totalBox.textContent = rows.length
+        ? ("Frozen: " + fmtKg(kg) + " kg · " + cs + " cases  ·  " + rows.length + " batch"+(rows.length>1?"es":""))
+        : "No batches yet — add the first one below.";
+      rows.forEach(r=>{
+        const bits = [r.product, r.grade, r.frozen_count,
+          (r.gross_weight_kg!=null? r.gross_weight_kg+" kg":null),
+          (r.achieved_glaze!=null? r.achieved_glaze+"% glz":null),
+          (r.cases!=null? r.cases+" cs":null)].filter(Boolean).join("  ·  ");
+        const row = el("div",{class:"lotrow",style:"cursor:default"});
+        row.appendChild(el("div",{class:"ln",style:"flex:1",text:bits||"(batch)"}));
+        const del = el("button",{class:"btn btn-ghost",style:"padding:4px 10px;font-size:13px",text:"✕",
+          title:"Remove this batch", onclick:async ()=>{
+            if(!confirm("Remove this batch?")) return;
+            try{
+              const { error } = await db.client.from("production_output").delete().eq("id", r.id);
+              if(error) throw error;
+              rows = rows.filter(x=> x.id!==r.id);
+              renderList();
+              toast("Batch removed","ok");
+            }catch(e){ toast("Could not remove: "+(e.message||e),"err"); }
+          }});
+        row.appendChild(del);
+        listWrap.appendChild(row);
+      });
+    }
+
+    async function loadRows(){
+      rows = [];
+      if(!lotSel.value){ renderList(); return; }
+      totalBox.textContent = "Loading…";
+      try{
+        const { data, error } = await db.client.from("production_output").select("*")
+          .eq("lot_number", lotSel.value).order("created_at",{ascending:true});
+        if(error) throw error;
+        rows = data || [];
+      }catch(e){ toast("Could not load batches: "+(e.message||e),"err"); }
+      renderList();
+    }
+
+    lotSel.addEventListener("change", ()=>{
+      // default the product to the lot's product, if known and not yet picked
+      const m = lotMeta[lotSel.value];
+      if(m && m.product && !prodSel.value){
+        const opt = Array.from(prodSel.options).find(o=>o.value===m.product);
+        if(opt) prodSel.value = m.product;
+      }
+      loadRows();
+    });
+
+    function clearAdd(){
+      gradeIn.value=fcountIn.value=grossIn.value=glazeIn.value=casesIn.value="";
+      netIn.value=tglazeIn.value=packIn.value=looseIn.value="";
+      // keep product selected — usually same across a lot's batches
+    }
+
+    addBtn.addEventListener("click", async ()=>{
+      errEl.classList.add("hidden");
+      if(!lotSel.value){ errEl.textContent="Pick a lot first."; errEl.classList.remove("hidden"); return; }
+      const hasSomething = [gradeIn.value,fcountIn.value,grossIn.value,glazeIn.value,casesIn.value,prodSel.value]
+        .some(v=> v!=null && String(v).trim()!=="");
+      if(!hasSomething){ errEl.textContent="Enter at least the grade, weight or cases for this batch."; errEl.classList.remove("hidden"); return; }
+      const rec = {
+        lot_number: lotSel.value,
+        product: prodSel.value || null,
+        grade: gradeIn.value.trim() || null,
+        frozen_count: fcountIn.value.trim() || null,
+        gross_weight_kg: numOrNull(grossIn.value),
+        achieved_glaze: numOrNull(glazeIn.value),
+        cases: numOrNull(casesIn.value),
+        net_weight_kg: numOrNull(netIn.value),
+        target_glaze: numOrNull(tglazeIn.value),
+        packing: packIn.value.trim() || null,
+        loose_cases: numOrNull(looseIn.value),
+        entry_mode: "manual",
+      };
+      addBtn.disabled=true; const lbl=addBtn.textContent; addBtn.textContent="Adding…";
+      try{
+        const saved = await DB().insert("production_output", rec);
+        // insert returns the row(s); fall back to the local rec if shape differs
+        const newRow = Array.isArray(saved) ? saved[0] : (saved && saved.id ? saved : rec);
+        rows.push(newRow.id ? newRow : Object.assign({id:"tmp-"+Date.now()}, rec));
+        renderList(); clearAdd(); toast("Batch added ✓","ok");
+        gradeIn.focus();
+      }catch(e){ errEl.textContent="Could not add: "+(e.message||e); errEl.classList.remove("hidden"); }
+      finally{ addBtn.disabled=false; addBtn.textContent=lbl; }
+    });
+  };
+
   // ===================================================================
   //  QC (4444)
   // ===================================================================

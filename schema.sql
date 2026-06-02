@@ -277,6 +277,32 @@ create table if not exists public.packing_status (
   created_by_role text
 );
 
+-- ============ Production: IQF frozen output (form 144) ============
+-- One row per frozen batch, appended through the shift (low-typing, per-batch).
+-- The Frozen Output screen sums these per lot for a live progress total.
+create table if not exists public.production_output (
+  id                uuid primary key default gen_random_uuid(),
+  lot_number        text references public.lots(lot_number),
+  product           text,
+  grade             text,            -- e.g. 11/15
+  frozen_count      text,            -- e.g. 15ct (count per kg, kept literal)
+  net_weight_kg     numeric,         -- pre-processing / treatment net weight
+  gross_weight_kg   numeric,         -- frozen gross weight
+  achieved_glaze    numeric,         -- ENTERED glaze %
+  target_glaze      numeric,         -- target glaze %
+  packing           text,            -- e.g. 1x12
+  cases             numeric,         -- no. of cases
+  loose_cases       numeric,
+  remarks           text,
+  entry_mode        text default 'manual',   -- manual | scan | scan_edited
+  source_photo_url  text,
+  extraction_json   jsonb,
+  extraction_confidence jsonb,
+  created_at        timestamptz default now(),
+  created_by_role   text
+);
+create index if not exists idx_production_output_lot on public.production_output(lot_number);
+
 -- ============ Office: inventory / dispatch / reglaze ledger ============
 create table if not exists public.inventory_transactions (
   id           uuid primary key default gen_random_uuid(),
