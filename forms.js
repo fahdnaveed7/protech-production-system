@@ -163,9 +163,9 @@
     let scanInput = null, scanBtn = null;
     if(scanReady(opts)){
       const bar = el("div",{class:"scan-bar"});
-      scanInput = el("input",{type:"file", accept:"image/*", capture:"environment", style:"display:none"});
+      scanInput = el("input",{type:"file", accept:"image/*", style:"display:none"});
       scanBtn = el("button",{class:"btn btn-scan", type:"button",
-        text:"📸 Scan paper form", onclick:()=> scanInput.click()});
+        text:"📸 Scan or upload sheet", onclick:()=> scanInput.click()});
       bar.appendChild(scanInput);
       bar.appendChild(scanBtn);
       if(!editing){
@@ -260,7 +260,7 @@
           errEl.textContent = "Scan failed: " + (e.message||e);
           errEl.classList.remove("hidden");
         }finally{
-          scanBtn.disabled = false; scanBtn.textContent = "📸 Scan paper form";
+          scanBtn.disabled = false; scanBtn.textContent = "📸 Scan or upload sheet";
           scanInput.value = "";
         }
       });
@@ -764,9 +764,9 @@
     let inspExtraction = null, inspScanned = false;
     if(App.scan && App.scan.enabled()){
       const bar = el("div",{class:"scan-bar", style:"margin-bottom:12px"});
-      const scanInput = el("input",{type:"file", accept:"image/*", capture:"environment", style:"display:none"});
+      const scanInput = el("input",{type:"file", accept:"image/*", style:"display:none"});
       const scanBtn = el("button",{class:"btn btn-scan", type:"button",
-        text:"📸 Scan paper form", onclick:()=> scanInput.click()});
+        text:"📸 Scan or upload sheet", onclick:()=> scanInput.click()});
       bar.appendChild(scanInput);
       bar.appendChild(scanBtn);
       headForm.appendChild(bar);
@@ -785,7 +785,7 @@
           errEl.textContent = "Scan failed: " + (e.message||e);
           errEl.classList.remove("hidden");
         }finally{
-          scanBtn.disabled = false; scanBtn.textContent = "📸 Scan paper form";
+          scanBtn.disabled = false; scanBtn.textContent = "📸 Scan or upload sheet";
           scanInput.value = "";
         }
       });
