@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "protech",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "--listen", "4321"],
+      "port": 4321
+    }
+  ]
+}

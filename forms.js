@@ -191,6 +191,11 @@
     "BLC PD","BLC PDT/ON","BLC PUD","BLC HL","CKD PDT/ON",
   ];
   const SPECIES  = ["Vannamei","Black Tiger","Squid","Tuna","Mackerel","Seer Fish"];
+  const SPECIES_CODES = { "Vannamei":"V", "Black Tiger":"BT", "Squid":"SQ", "Tuna":"TU", "Mackerel":"MK", "Seer Fish":"SF" };
+  const speciesCode = (s)=> SPECIES_CODES[s] || (s? s.replace(/[^A-Za-z]/g,"").slice(0,2).toUpperCase() : null);
+  // Shrimp species run the full line; everything else skips peeling + treatment.
+  const SHRIMP_SPECIES = ["Vannamei","Black Tiger"];
+  const isShrimp = (s)=> SHRIMP_SPECIES.indexOf(s) !== -1;
   const MARKETS  = ["Russia","China"];
   const SHIFTS   = [{v:"D",label:"Day"},{v:"N",label:"Night"}];
 
@@ -212,7 +217,7 @@
     const seq = nextSeqFor(lots, yy());
     buildForm(host, {
       title:"New Lot", stage:"intake", table:"lots", needLots:false,
-      intro:"Lot code is series / sequence / year — e.g. 5/89/26. Sequence is suggested from existing lots; adjust if needed.",
+      intro:"Lot code is series / sequence / year — e.g. 5/89/26. Sequence is suggested from existing lots; adjust if needed. Shrimp lots run the full line (peeling → treatment → freezing → QC → packing). Fish & squid lots skip peeling and treatment — go straight from intake to freezing.",
       successMsg:"Lot created ✓",
       submitLabel:"Create lot",
       fields:[
@@ -221,7 +226,8 @@
         { k:"year",    label:"Year (YY)",type:"text",   default:yy(), required:true },
         { k:"lot_number", label:"Lot code", type:"computed", full:true,
           fn:(v)=> (v.series||"?")+"/"+(v.lot_seq||"?")+"/"+(v.year||"?") },
-        { k:"species", label:"Species", type:"select", options:SPECIES, default:"Vannamei", required:true },
+        { k:"species", label:"Species", type:"select", options:SPECIES, default:"Vannamei", required:true,
+          hint:"Vannamei / Black Tiger = shrimp (full line). Squid & fish skip peeling + treatment." },
         { k:"product", label:"Product", type:"select", options:PRODUCTS },
         { k:"market",  label:"Market",  type:"select", options:MARKETS },
         { k:"intake_date", label:"Intake date", type:"date", default:today() },
@@ -231,7 +237,7 @@
       prepare:(v)=>({
         lot_number: (v.series||"")+"/"+(v.lot_seq||"")+"/"+(v.year||""),
         series:v.series, lot_seq:v.lot_seq, year:v.year,
-        species:v.species, species_code:"V", product:v.product, market:v.market,
+        species:v.species, species_code:speciesCode(v.species), product:v.product, market:v.market,
         intake_date:v.intake_date, truck_plate:v.truck_plate, status:"open", remarks:v.remarks,
       }),
     }, lots);
@@ -254,6 +260,7 @@
   // 5A — Peeling Shed Report
   App.views.shedrep = formView({
     title:"Peeling Shed Report", stage:"peeling", table:"peeling_shed_reports", fmt:"FORM 5A",
+    intro:"Shrimp lots only. Fish & squid lots skip peeling — leave this stage blank for them.",
     successMsg:"Shed report saved ✓",
     fields:[
       { k:"report_no",   label:"Report no", type:"text" },
@@ -298,6 +305,7 @@
   // ===================================================================
   App.views.peeling = formView({
     title:"Peeling Output", stage:"peeling", table:"peeling_output",
+    intro:"Shrimp lots only. Fish & squid lots skip peeling — leave this stage blank for them.",
     successMsg:"Peeling output saved ✓",
     fields:[
       { k:"lot_number",  label:"Lot", type:"lot", required:true },
@@ -335,13 +343,20 @@
 
   App.views.machine = formView({
     title:"Machine Event", stage:"freezing", table:"machine_events",
-    intro:"Duration is calculated from start and stop times.",
+    intro:"Pick the freezing line, then log the run. Duration is calculated from start and stop times. The Spiral line is the IQF freezer.",
     successMsg:"Machine event saved ✓",
     fields:[
       { k:"lot_number",  label:"Lot", type:"lot", required:true },
-      { k:"machine_type",label:"Machine", type:"select", options:[
-          {v:"ice",label:"Ice machine"},{v:"plate_freezer",label:"Plate freezer"},
-          {v:"tunnel",label:"Tunnel"},{v:"iqf_infeed",label:"IQF infeed"} ], required:true },
+      { k:"machine_type",label:"Line / machine", type:"select", options:[
+          {v:"plate",label:"Plate freezer"},
+          {v:"spiral_iqf",label:"Spiral / IQF freezer"},
+          {v:"blast",label:"Blast freezer"},
+          {v:"aqua",label:"Aqua freezer"},
+          {v:"dolphin",label:"Dolphin freezer"},
+          {v:"ghan",label:"Ghan freezer"},
+          {v:"ice",label:"Ice machine"},
+          {v:"tunnel",label:"Tunnel"} ], required:true,
+        hint:"Same six lines tracked in daily costing. Spiral = IQF." },
       { k:"load_no",  label:"Load no", type:"text" },
       { k:"start_at", label:"Start", type:"datetime" },
       { k:"stop_at",  label:"Stop", type:"datetime" },
@@ -379,17 +394,118 @@
     },
   });
 
-  App.views.packing = formView({
-    title:"Packing Status", stage:"stuffing", table:"packing_status",
-    successMsg:"Packing status saved ✓",
-    fields:[
-      { k:"lot_number",  label:"Lot", type:"lot", required:true },
-      { k:"buyer",       label:"Buyer", type:"text" },
-      { k:"cases_target",label:"Cases target", type:"number" },
-      { k:"cases_packed",label:"Cases packed", type:"number" },
-      { k:"packets",     label:"Packets", type:"number" },
-    ],
-  });
+  // Packing Status — editable. Pick a lot, see its current numbers, update them.
+  // Saving overwrites the lot's latest packing record (or creates the first one).
+  App.views.packing = async function(host){
+    const db = DB();
+    if(!db || !db.isOnline()) return notConnected(host);
+    let lots = []; try{ lots = await db.listLots(); }catch(_){}
+
+    host.innerHTML = "";
+    const card = el("div",{class:"card"});
+    const form = el("div",{class:"form"});
+    form.appendChild(el("div",{class:"form-head"},[ el("h3",{text:"Packing Status"}) ]));
+    form.appendChild(el("div",{class:"hint",style:"margin:-6px 0 14px;text-transform:none",
+      text:"Pick a lot to load its current packing numbers, then update them. Saving overwrites that lot's latest packing record."}));
+
+    const grid = el("div",{class:"fgrid"});
+
+    // Lot selector
+    const lotSel = el("select");
+    [{v:"",label:"Select lot…"}].concat(lots.map(l=>({
+      v:l.lot_number, label:l.lot_number + (l.product?" · "+l.product:(l.species?" · "+l.species:"")) })))
+      .forEach(o=> lotSel.appendChild(el("option",{value:o.v}, o.label)));
+    const lotFld = el("div",{class:"fld"},[ el("label",{text:"Lot"}), lotSel ]);
+    grid.appendChild(lotFld);
+
+    const mkNum = (label)=>{
+      const i = el("input",{type:"number"}); i.setAttribute("inputmode","decimal"); i.step="any";
+      grid.appendChild(el("div",{class:"fld"},[ el("label",{text:label}), i ]));
+      return i;
+    };
+    const buyerIn = el("input",{type:"text", placeholder:"Buyer"});
+    grid.appendChild(el("div",{class:"fld"},[ el("label",{text:"Buyer"}), buyerIn ]));
+    const targetIn = mkNum("Cases target");
+    const packedIn = mkNum("Cases packed");
+    const packetsIn = mkNum("Packets");
+
+    // live remaining
+    const remOut = el("div",{style:"font-size:20px;font-weight:800;color:var(--primary-dark);padding:8px 0;letter-spacing:.5px",text:"—"});
+    grid.appendChild(el("div",{class:"fld full"},[ el("label",{text:"Remaining (target − packed)"}), remOut ]));
+    const recomputeRem = ()=>{
+      const t=Number(targetIn.value), p=Number(packedIn.value);
+      remOut.textContent = (targetIn.value!==""&&packedIn.value!=="" && !isNaN(t) && !isNaN(p)) ? String(t-p) : "—";
+    };
+    targetIn.addEventListener("input",recomputeRem); packedIn.addEventListener("input",recomputeRem);
+
+    form.appendChild(grid);
+
+    const statusLine = el("div",{class:"hint",style:"text-transform:none",text:""});
+    form.appendChild(statusLine);
+    const errEl = el("div",{class:"err-msg hidden"});
+    form.appendChild(errEl);
+
+    const btn = el("button",{class:"btn btn-primary", text:"Save packing"});
+    const cancel = el("button",{class:"btn btn-ghost", text:"Cancel", onclick:()=> App.home()});
+    form.appendChild(el("div",{class:"form-actions"},[cancel, btn]));
+    card.appendChild(form);
+    host.appendChild(card);
+
+    let existingId = null;
+    const fill = (row)=>{
+      existingId = row ? row.id : null;
+      buyerIn.value   = row && row.buyer!=null        ? row.buyer        : "";
+      targetIn.value  = row && row.cases_target!=null ? row.cases_target : "";
+      packedIn.value  = row && row.cases_packed!=null ? row.cases_packed : "";
+      packetsIn.value = row && row.packets!=null      ? row.packets      : "";
+      recomputeRem();
+      statusLine.textContent = row
+        ? "Editing this lot's existing packing record — saving will update it."
+        : "No packing record yet for this lot — saving will create the first one.";
+      btn.textContent = row ? "Update packing" : "Save packing";
+    };
+
+    lotSel.addEventListener("change", async ()=>{
+      const lot = lotSel.value;
+      existingId = null; statusLine.textContent = "";
+      if(!lot){ fill(null); statusLine.textContent=""; return; }
+      statusLine.textContent = "Loading current packing…";
+      try{
+        const { data, error } = await db.client.from("packing_status").select("*")
+          .eq("lot_number", lot).order("recorded_at",{ascending:false}).limit(1);
+        if(error) throw error;
+        fill(data && data.length ? data[0] : null);
+      }catch(e){ fill(null); statusLine.textContent="Could not load existing record: "+(e.message||e); }
+    });
+
+    btn.addEventListener("click", async ()=>{
+      errEl.classList.add("hidden");
+      const lot = lotSel.value;
+      if(!lot){ errEl.textContent="Please pick a lot"; errEl.classList.remove("hidden"); return; }
+      const numOrNull = (s)=> (s==="" || s==null || isNaN(Number(s))) ? null : Number(s);
+      const row = {
+        lot_number: lot,
+        buyer: buyerIn.value.trim() || null,
+        cases_target: numOrNull(targetIn.value),
+        cases_packed: numOrNull(packedIn.value),
+        packets: numOrNull(packetsIn.value),
+        recorded_at: new Date().toISOString(),
+      };
+      btn.disabled=true; const lbl=btn.textContent; btn.textContent="Saving…";
+      try{
+        if(existingId){
+          const { error } = await db.client.from("packing_status").update(row).eq("id", existingId);
+          if(error) throw error;
+          toast("Packing updated ✓","ok");
+        }else{
+          await DB().insert("packing_status", row);
+          toast("Packing saved ✓","ok");
+        }
+        App.home();
+      }catch(e){ btn.disabled=false; btn.textContent=lbl;
+        errEl.textContent="Could not save: "+(e.message||e); errEl.classList.remove("hidden"); }
+    });
+  };
 
   // ===================================================================
   //  QC (4444)
@@ -398,6 +514,7 @@
   // 5B — Treatment Log (FMT POF/PC/004) — one row per tub, additives presence-only
   App.views.treatment = formView({
     title:"Treatment Log", stage:"treatment", table:"treatment_logs", fmt:"FMT POF/PC/004",
+    intro:"Shrimp soaking/treatment only. Fish & squid lots are not soaked — skip this stage for them.",
     successMsg:"Treatment log saved ✓",
     fields:[
       { k:"date",   label:"Date", type:"date", default:today() },

@@ -404,7 +404,8 @@
   }
 
   function fmtTime(t){ if(!t) return null; const d=new Date(t); return isNaN(d)?String(t):d.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"}); }
-  function machineName(m){ return ({ice:"Ice machine",plate_freezer:"Plate freezer",tunnel:"Tunnel",iqf_infeed:"IQF infeed"})[m]||m||"Machine"; }
+  function machineName(m){ return ({plate:"Plate freezer",spiral_iqf:"Spiral / IQF freezer",blast:"Blast freezer",aqua:"Aqua freezer",dolphin:"Dolphin freezer",ghan:"Ghan freezer",ice:"Ice machine",tunnel:"Tunnel",
+    plate_freezer:"Plate freezer",iqf_infeed:"Spiral / IQF freezer"})[m]||m||"Machine"; }
   function pointName(p){ return ({iqf_infeed:"IQF infeed",tunnel:"Tunnel",core_before:"Core (before)",core_after:"Core (after)",stuffing:"Stuffing"})[p]||p||"Point"; }
   function stageName(s){ return ({depanning:"Depanning",repacking:"Repacking",stuffing:"Stuffing"})[s]||s||"QC"; }
   function txnName(t){ return ({in:"Inventory in",dispatch:"Dispatch",reglaze:"Reglaze"})[t]||t||"Transaction"; }

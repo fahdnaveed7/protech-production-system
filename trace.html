@@ -198,7 +198,7 @@
             peelOut.map(r=>entry({title:"Peeling Output"+(r.source?" — "+r.source:""), when:whenOf(r.created_at), fields:[F("Yield %",r.yield_pct),F("Converted",r.converted_count),F("Boxes",r.boxes)]}))) },
         { icon:"🧪", name:"Treatment / Soaking", entries:treat.map(r=>entry({title:"Treatment — Tub "+(r.tub_no||"—"), when:whenOf(r.date||r.created_at), fields:[F("Product",r.product),F("% gain",r.pct_gain),F("Soak",[r.soak_in_time,r.soak_out_time].filter(Boolean).join(" – ")||null),F("Additives",additives(r))]})) },
         { icon:"❄️", name:"Production / Freezing", entries:[].concat(
-            machine.map(r=>entry({title:({ice:"Ice machine",plate_freezer:"Plate freezer",tunnel:"Tunnel",iqf_infeed:"IQF infeed"})[r.machine_type]||"Machine", when:whenOf(r.start_at||r.created_at), fields:[F("Duration",dur(r.duration_seconds))]})),
+            machine.map(r=>entry({title:({plate:"Plate freezer",spiral_iqf:"Spiral / IQF freezer",blast:"Blast freezer",aqua:"Aqua freezer",dolphin:"Dolphin freezer",ghan:"Ghan freezer",ice:"Ice machine",tunnel:"Tunnel",plate_freezer:"Plate freezer",iqf_infeed:"Spiral / IQF freezer"})[r.machine_type]||"Machine", when:whenOf(r.start_at||r.created_at), fields:[F("Duration",dur(r.duration_seconds))]})),
             (tempByStage.freezing||[]).map(r=>entry({title:"Temperature", when:whenOf(r.recorded_at), fields:[F("Point",r.point),F("Temp °C",r.temp_c)], photos:[r.photo_url]}))) },
         { icon:"🔬", name:"Quality Inspection", entries:[].concat(
             oirReports.map(rep=>{ const ss=samplesByReport[rep.id]||[]; const tot={}; ss.forEach(s=>{for(const k in DEFECTS){const v=Number(s[k])||0; if(v)tot[k]=(tot[k]||0)+v;}});
