@@ -303,6 +303,28 @@ create table if not exists public.production_output (
 );
 create index if not exists idx_production_output_lot on public.production_output(lot_number);
 
+-- ============ Captured documents (Phase 1: photo IS the record) ============
+-- Each freezing / load / repacking sheet is kept as a photo, tagged by lot,
+-- sheet type and the date written on the paper. summary_json /
+-- extraction_confidence are reserved for Phase 2 auto-read of the
+-- "money numbers" (product · grade · slabs/cases · slab-wt · glaze · kg).
+create table if not exists public.documents (
+  id                uuid primary key default gen_random_uuid(),
+  lot_number        text references public.lots(lot_number),
+  sheet_type        text,            -- IQF 144 | Plate/Block | Spiral | Blast/Tuna | Load Report 72 | Repacking 639 | Other
+  photo_url         text not null,   -- the kept document = source of truth
+  doc_date          date default current_date,  -- date written on the sheet
+  remarks           text,
+  entry_mode        text default 'photo',
+  summary_json      jsonb,           -- Phase 2: read money-numbers
+  extraction_confidence jsonb,
+  created_at        timestamptz default now(),
+  created_by_role   text
+);
+create index if not exists documents_lot_idx  on public.documents(lot_number);
+create index if not exists documents_date_idx on public.documents(doc_date);
+create index if not exists documents_type_idx on public.documents(sheet_type);
+
 -- ============ Office: inventory / dispatch / reglaze ledger ============
 create table if not exists public.inventory_transactions (
   id           uuid primary key default gen_random_uuid(),

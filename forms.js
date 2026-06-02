@@ -1215,26 +1215,171 @@
     });
   };
 
+  // Sheet types the floor captures. The photo IS the record; the tag just
+  // says which paper it is so the gallery + (Phase 2) auto-read knows the layout.
+  const SHEET_TYPES = [
+    "IQF Production (144)",
+    "Plate / Block",
+    "Spiral",
+    "Blast / Tuna",
+    "Load Report (72)",
+    "Repacking (639)",
+    "Other",
+  ];
+  const slug = (s)=> String(s||"doc").toLowerCase().replace(/[^\w]+/g,"_").replace(/^_+|_+$/g,"") || "doc";
+
+  // Capture Document — Phase 1 of the document-keeping plan.
+  // Snap or upload the freezing / load / repacking sheet, tag lot + sheet type.
+  // No typing of the numbers — the photo is kept as the source of truth.
+  App.views.capturedoc = async function(host){
+    const db = DB();
+    if(!db || !db.isOnline()) return notConnected(host);
+    let lots = []; try{ lots = await db.listLots(); }catch(_){}
+
+    host.innerHTML = "";
+    const card = el("div",{class:"card"});
+    const form = el("div",{class:"form"});
+    form.appendChild(el("div",{class:"form-head"},[ el("h3",{text:"Capture Document"}) ]));
+    form.appendChild(el("div",{class:"hint",style:"margin:-6px 0 14px;text-transform:none",
+      text:"Snap or upload the sheet, tag the lot and which sheet it is. The photo is kept as the record — no typing the numbers."}));
+
+    const grid = el("div",{class:"fgrid"});
+
+    // sheet type
+    const typeSel = el("select");
+    SHEET_TYPES.forEach(t=> typeSel.appendChild(el("option",{value:t}, t)));
+    grid.appendChild(el("div",{class:"fld"},[ el("label",{text:"Sheet type"}), typeSel ]));
+
+    // lot (optional)
+    const lotSel = el("select");
+    [{v:"",label:"Lot (optional)…"}].concat(lots.map(l=>({
+      v:l.lot_number, label:l.lot_number + (l.product?" · "+l.product:(l.species?" · "+l.species:"")) })))
+      .forEach(o=> lotSel.appendChild(el("option",{value:o.v}, o.label)));
+    grid.appendChild(el("div",{class:"fld"},[ el("label",{text:"Lot"}), lotSel ]));
+
+    // date on the sheet
+    const dateIn = el("input",{type:"date", value:today()});
+    grid.appendChild(el("div",{class:"fld"},[ el("label",{text:"Date on sheet"}), dateIn ]));
+
+    // remarks
+    const remIn = el("input",{type:"text", placeholder:"e.g. Load No. 1"});
+    grid.appendChild(el("div",{class:"fld"},[ el("label",{text:"Remarks (optional)"}), remIn ]));
+
+    // photo — camera OR gallery/file (no capture attr)
+    const file = el("input",{type:"file", accept:"image/*", style:"display:none"});
+    const prev = el("img",{class:"photo-prev hidden", alt:"preview"});
+    const pick = el("button",{class:"photo-pick", type:"button", text:"📷 Take or upload sheet",
+      onclick:()=> file.click()});
+    file.addEventListener("change", ()=>{
+      const f = file.files[0];
+      if(f){ prev.src = URL.createObjectURL(f); prev.classList.remove("hidden"); pick.textContent="📷 Change photo"; }
+    });
+    grid.appendChild(el("div",{class:"fld full"},[ el("label",{text:"Document photo"}),
+      el("div",{class:"photo-field"},[pick, prev, file]) ]));
+
+    form.appendChild(grid);
+
+    const errEl = el("div",{class:"err-msg hidden"});
+    form.appendChild(errEl);
+
+    // recently captured (this session) — quick reassurance the photo stuck
+    const recentHead = el("div",{class:"hint",style:"text-transform:none;font-weight:700;margin:10px 0 6px;display:none",text:"Captured just now"});
+    const recentWrap = el("div",{style:"display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:10px;margin-bottom:8px"});
+    form.appendChild(recentHead); form.appendChild(recentWrap);
+
+    const saveBtn = el("button",{class:"btn btn-primary", text:"Save document"});
+    const doneBtn = el("button",{class:"btn btn-ghost", text:"Done", onclick:()=> App.home()});
+    form.appendChild(el("div",{class:"form-actions"},[doneBtn, saveBtn]));
+    card.appendChild(form);
+    host.appendChild(card);
+
+    saveBtn.addEventListener("click", async ()=>{
+      errEl.classList.add("hidden");
+      const f = file.files[0];
+      if(!f){ errEl.textContent="Please take or upload the sheet photo first."; errEl.classList.remove("hidden"); return; }
+      const sheet = typeSel.value;
+      const lot = lotSel.value || null;
+      saveBtn.disabled=true; const lbl=saveBtn.textContent; saveBtn.textContent="Saving…";
+      try{
+        const url = await db.uploadPhoto(f, lot || "unassigned", slug(sheet));
+        const rec = {
+          lot_number: lot,
+          sheet_type: sheet,
+          photo_url: url,
+          doc_date: dateIn.value || null,
+          remarks: remIn.value.trim() || null,
+          entry_mode: "photo",
+        };
+        await DB().insert("documents", rec);
+        // show in the "just now" strip
+        recentHead.style.display="";
+        recentWrap.insertBefore(el("div",{},[
+          el("img",{class:"thumb", style:"width:100%;height:90px", src:url, onclick:()=>lightbox(url)}),
+          el("div",{style:"font-size:10px;color:var(--muted);margin-top:4px;text-align:center",text:(lot||"—")}),
+        ]), recentWrap.firstChild);
+        toast("Document saved ✓","ok");
+        // reset photo for the next sheet, keep type + lot for fast batch capture
+        file.value=""; prev.src=""; prev.classList.add("hidden"); pick.textContent="📷 Take or upload sheet";
+        remIn.value="";
+      }catch(e){ errEl.textContent="Could not save: "+(e.message||e); errEl.classList.remove("hidden"); }
+      finally{ saveBtn.disabled=false; saveBtn.textContent=lbl; }
+    });
+  };
+
   App.views.docs = function(host){
     loadInto(host, "Loading documents…", async (db)=>{
-      const [receipts, shedReps] = await Promise.all([
+      const [receipts, shedReps, captured] = await Promise.all([
         db.list("shed_receipts",{ order:"created_at", ascending:false, limit:60 }),
         db.list("peeling_shed_reports",{ order:"created_at", ascending:false, limit:60 }),
+        db.list("documents",{ order:"created_at", ascending:false, limit:200 }),
       ]);
-      const docs = receipts.filter(r=>r.photo_url).map(r=>({lot:r.lot_number, t:"Shed receipt"+(r.shed_name?" · "+r.shed_name:""), u:r.photo_url, at:r.created_at}))
-        .concat(shedReps.filter(r=>r.photo_url).map(r=>({lot:r.lot_number, t:"Peeling shed report", u:r.photo_url, at:r.created_at})))
+      const docs = captured.filter(r=>r.photo_url).map(r=>({lot:r.lot_number, t:r.sheet_type||"Document", u:r.photo_url, at:r.doc_date||r.created_at, type:r.sheet_type||"Other", rem:r.remarks}))
+        .concat(receipts.filter(r=>r.photo_url).map(r=>({lot:r.lot_number, t:"Shed receipt"+(r.shed_name?" · "+r.shed_name:""), u:r.photo_url, at:r.created_at, type:"Shed receipt"})))
+        .concat(shedReps.filter(r=>r.photo_url).map(r=>({lot:r.lot_number, t:"Peeling shed report", u:r.photo_url, at:r.created_at, type:"Peeling shed report"})))
         .sort((a,b)=> new Date(b.at)-new Date(a.at));
-      if(!docs.length) return el("div",{class:"card"}, el("div",{class:"stub"},[el("div",{class:"big",text:"📎"}),el("div",{text:"No scanned documents yet"})]));
+      if(!docs.length) return el("div",{class:"card"}, el("div",{class:"stub"},[el("div",{class:"big",text:"📎"}),el("div",{text:"No documents yet — capture one from the floor"})]));
+
       const card = el("div",{class:"card"});
+
+      // ---- filter bar ----
+      const types = Array.from(new Set(docs.map(d=>d.type))).sort();
+      const lotsAvail = Array.from(new Set(docs.map(d=>d.lot).filter(Boolean))).sort();
+      const filt = el("div",{class:"fgrid",style:"margin-bottom:14px"});
+      const typeSel = el("select"); [{v:"",l:"All sheet types"}].concat(types.map(t=>({v:t,l:t}))).forEach(o=> typeSel.appendChild(el("option",{value:o.v}, o.l)));
+      const lotSel  = el("select"); [{v:"",l:"All lots"}].concat(lotsAvail.map(t=>({v:t,l:t}))).forEach(o=> lotSel.appendChild(el("option",{value:o.v}, o.l)));
+      const dateIn  = el("input",{type:"date"});
+      filt.appendChild(el("div",{class:"fld"},[ el("label",{text:"Sheet type"}), typeSel ]));
+      filt.appendChild(el("div",{class:"fld"},[ el("label",{text:"Lot"}), lotSel ]));
+      filt.appendChild(el("div",{class:"fld"},[ el("label",{text:"Date"}), dateIn ]));
+      card.appendChild(filt);
+
+      const countLine = el("div",{class:"hint",style:"text-transform:none;margin-bottom:10px"});
+      card.appendChild(countLine);
       const grid = el("div",{style:"display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:12px"});
-      docs.forEach(d=>{
-        grid.appendChild(el("div",{},[
-          el("img",{class:"thumb", style:"width:100%;height:120px", src:d.u, onclick:()=>lightbox(d.u)}),
-          el("div",{style:"font-size:12px;font-weight:600;margin-top:6px",text:d.lot||"—"}),
-          el("div",{style:"font-size:11px;color:var(--muted)",text:d.t}),
-        ]));
-      });
       card.appendChild(grid);
+
+      const sameDay = (at, d)=>{ if(!d) return true; try{ return new Date(at).toISOString().slice(0,10)===d; }catch(_){ return false; } };
+      const render = ()=>{
+        grid.innerHTML="";
+        const shown = docs.filter(d=>
+          (!typeSel.value || d.type===typeSel.value) &&
+          (!lotSel.value  || d.lot===lotSel.value) &&
+          sameDay(d.at, dateIn.value));
+        countLine.textContent = shown.length+" document"+(shown.length===1?"":"s");
+        if(!shown.length){ grid.appendChild(el("div",{class:"hint",style:"text-transform:none",text:"None match these filters."})); return; }
+        shown.forEach(d=>{
+          grid.appendChild(el("div",{},[
+            el("img",{class:"thumb", style:"width:100%;height:120px", src:d.u, onclick:()=>lightbox(d.u)}),
+            el("div",{style:"font-size:12px;font-weight:600;margin-top:6px",text:d.lot||"—"}),
+            el("div",{style:"font-size:11px;color:var(--muted)",text:d.t+(d.rem?" · "+d.rem:"")}),
+            el("div",{style:"font-size:10px;color:var(--muted)",text:whenShort(d.at)}),
+          ]));
+        });
+      };
+      typeSel.addEventListener("change",render);
+      lotSel.addEventListener("change",render);
+      dateIn.addEventListener("change",render);
+      render();
       return card;
     });
   };
