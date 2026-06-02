@@ -181,7 +181,16 @@
     });
   }
 
-  const PRODUCTS = ["R PD","R PTO","R PTO(V)","HL","HON"];
+  // Product codes mirror the LOT Analysis / lot_economics sheet so new lots
+  // string-match the historical economics data. RAW = raw, BLC = blanched,
+  // CKD = cooked; PD = peeled-deveined, PDT/ON = PD tail-on, PUD = peeled
+  // undeveined, PVPD = PV peeled-deveined, HL = headless, H/ON = head-on,
+  // ECPL = easy-peel.
+  const PRODUCTS = [
+    "RAW PD","RAW PDT/ON","RAW PUD","RAW PVPD","RAW HL","RAW H/ON","RAW ECPL",
+    "BLC PD","BLC PDT/ON","BLC PUD","BLC HL","CKD PDT/ON",
+  ];
+  const SPECIES  = ["Vannamei","Black Tiger","Squid","Tuna","Mackerel","Seer Fish"];
   const MARKETS  = ["Russia","China"];
   const SHIFTS   = [{v:"D",label:"Day"},{v:"N",label:"Night"}];
 
@@ -212,7 +221,7 @@
         { k:"year",    label:"Year (YY)",type:"text",   default:yy(), required:true },
         { k:"lot_number", label:"Lot code", type:"computed", full:true,
           fn:(v)=> (v.series||"?")+"/"+(v.lot_seq||"?")+"/"+(v.year||"?") },
-        { k:"species", label:"Species", type:"select", options:["Vannamei"], default:"Vannamei", required:true },
+        { k:"species", label:"Species", type:"select", options:SPECIES, default:"Vannamei", required:true },
         { k:"product", label:"Product", type:"select", options:PRODUCTS },
         { k:"market",  label:"Market",  type:"select", options:MARKETS },
         { k:"intake_date", label:"Intake date", type:"date", default:today() },
@@ -250,7 +259,7 @@
       { k:"report_no",   label:"Report no", type:"text" },
       { k:"date",        label:"Date", type:"date", default:today() },
       { k:"lot_number",  label:"Lot", type:"lot", required:true },
-      { k:"species",     label:"Species", type:"select", options:["Vannamei"], default:"Vannamei" },
+      { k:"species",     label:"Species", type:"select", options:SPECIES, default:"Vannamei" },
       { k:"input_count", label:"Input count", type:"text", placeholder:"e.g. HO 30/40" },
       { k:"input_qty_kg",label:"Input qty (kg)", type:"number" },
       { k:"converted_count", label:"Converted count", type:"text" },
@@ -275,7 +284,7 @@
       { k:"shed_contact",label:"Contact", type:"text" },
       { k:"date",        label:"Date", type:"date", default:today() },
       { k:"lot_number",  label:"Lot", type:"lot", required:true },
-      { k:"species",     label:"Species", type:"select", options:["Vannamei"], default:"Vannamei" },
+      { k:"species",     label:"Species", type:"select", options:SPECIES, default:"Vannamei" },
       { k:"header_count",label:"Header count", type:"text", placeholder:"26/30" },
       { k:"total_boxes", label:"Total boxes", type:"number" },
       { k:"total_kg",    label:"Total kg", type:"number" },
@@ -396,7 +405,7 @@
       { k:"tub_no", label:"Tub no", type:"text" },
       { k:"lot_number", label:"Lot", type:"lot", required:true },
       { k:"product", label:"Product", type:"select", options:PRODUCTS },
-      { k:"species", label:"Species", type:"select", options:["Vannamei"], default:"Vannamei" },
+      { k:"species", label:"Species", type:"select", options:SPECIES, default:"Vannamei" },
       { k:"grade",   label:"Grade / count", type:"text", placeholder:"e.g. 26/30" },
       { k:"chemical_id", label:"Chemical ID", type:"text" },
       { k:"salt_id",     label:"Salt ID", type:"text" },
