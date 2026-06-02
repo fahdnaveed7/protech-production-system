@@ -1218,10 +1218,10 @@
   // Sheet types the floor captures. The photo IS the record; the tag just
   // says which paper it is so the gallery + (Phase 2) auto-read knows the layout.
   const SHEET_TYPES = [
+    "Production Plan",
     "IQF Production (144)",
     "Plate / Block",
     "Spiral",
-    "Blast / Tuna",
     "Load Report (72)",
     "Repacking (639)",
     "Other",
@@ -1229,9 +1229,11 @@
   const slug = (s)=> String(s||"doc").toLowerCase().replace(/[^\w]+/g,"_").replace(/^_+|_+$/g,"") || "doc";
 
   // Capture Document — Phase 1 of the document-keeping plan.
-  // Snap or upload the freezing / load / repacking sheet, tag lot + sheet type.
-  // No typing of the numbers — the photo is kept as the source of truth.
-  App.views.capturedoc = async function(host){
+  // Snap or upload a sheet, tag lot + sheet type. The photo IS the record.
+  // `preset` locks/relabels it for a specific use (e.g. Upload Plan):
+  //   { title, hint, presetType, lockType, hideLot, datePlaceholder }
+  async function buildCapture(host, preset){
+    preset = preset || {};
     const db = DB();
     if(!db || !db.isOnline()) return notConnected(host);
     let lots = []; try{ lots = await db.listLots(); }catch(_){}
@@ -1239,30 +1241,35 @@
     host.innerHTML = "";
     const card = el("div",{class:"card"});
     const form = el("div",{class:"form"});
-    form.appendChild(el("div",{class:"form-head"},[ el("h3",{text:"Capture Document"}) ]));
+    form.appendChild(el("div",{class:"form-head"},[ el("h3",{text:preset.title || "Capture Document"}) ]));
     form.appendChild(el("div",{class:"hint",style:"margin:-6px 0 14px;text-transform:none",
-      text:"Snap or upload the sheet, tag the lot and which sheet it is. The photo is kept as the record — no typing the numbers."}));
+      text:preset.hint || "Snap or upload the sheet, tag the lot and which sheet it is. The photo is kept as the record — no typing the numbers."}));
 
     const grid = el("div",{class:"fgrid"});
 
-    // sheet type
+    // sheet type — hidden+locked when a preset fixes it
     const typeSel = el("select");
     SHEET_TYPES.forEach(t=> typeSel.appendChild(el("option",{value:t}, t)));
-    grid.appendChild(el("div",{class:"fld"},[ el("label",{text:"Sheet type"}), typeSel ]));
+    if(preset.presetType){ typeSel.value = preset.presetType; }
+    if(!preset.lockType){
+      grid.appendChild(el("div",{class:"fld"},[ el("label",{text:"Sheet type"}), typeSel ]));
+    }
 
-    // lot (optional)
+    // lot (optional) — hidden when the document spans the whole day (e.g. plan)
     const lotSel = el("select");
     [{v:"",label:"Lot (optional)…"}].concat(lots.map(l=>({
       v:l.lot_number, label:l.lot_number + (l.product?" · "+l.product:(l.species?" · "+l.species:"")) })))
       .forEach(o=> lotSel.appendChild(el("option",{value:o.v}, o.label)));
-    grid.appendChild(el("div",{class:"fld"},[ el("label",{text:"Lot"}), lotSel ]));
+    if(!preset.hideLot){
+      grid.appendChild(el("div",{class:"fld"},[ el("label",{text:"Lot"}), lotSel ]));
+    }
 
     // date on the sheet
     const dateIn = el("input",{type:"date", value:today()});
-    grid.appendChild(el("div",{class:"fld"},[ el("label",{text:"Date on sheet"}), dateIn ]));
+    grid.appendChild(el("div",{class:"fld"},[ el("label",{text:preset.dateLabel || "Date on sheet"}), dateIn ]));
 
     // remarks
-    const remIn = el("input",{type:"text", placeholder:"e.g. Load No. 1"});
+    const remIn = el("input",{type:"text", placeholder:preset.remarksPlaceholder || "e.g. Load No. 1"});
     grid.appendChild(el("div",{class:"fld"},[ el("label",{text:"Remarks (optional)"}), remIn ]));
 
     // photo — camera OR gallery/file (no capture attr)
@@ -1315,16 +1322,33 @@
         recentHead.style.display="";
         recentWrap.insertBefore(el("div",{},[
           el("img",{class:"thumb", style:"width:100%;height:90px", src:url, onclick:()=>lightbox(url)}),
-          el("div",{style:"font-size:10px;color:var(--muted);margin-top:4px;text-align:center",text:(lot||"—")}),
+          el("div",{style:"font-size:10px;color:var(--muted);margin-top:4px;text-align:center",text:(lot||sheet||"—")}),
         ]), recentWrap.firstChild);
-        toast("Document saved ✓","ok");
+        toast((preset.savedToast || "Document saved")+" ✓","ok");
         // reset photo for the next sheet, keep type + lot for fast batch capture
         file.value=""; prev.src=""; prev.classList.add("hidden"); pick.textContent="📷 Take or upload sheet";
         remIn.value="";
       }catch(e){ errEl.textContent="Could not save: "+(e.message||e); errEl.classList.remove("hidden"); }
       finally{ saveBtn.disabled=false; saveBtn.textContent=lbl; }
     });
-  };
+  }
+
+  // General document capture (floor sheets).
+  App.views.capturedoc = (host)=> buildCapture(host, {});
+
+  // Upload Plan — manager snaps/uploads the day's production plan (the WhatsApp
+  // message). Same engine, sheet type locked to "Production Plan", no lot
+  // (a plan spans the whole day). This is the denominator Phase 3 reads targets from.
+  App.views.uploadplan = (host)=> buildCapture(host, {
+    title: "Upload Production Plan",
+    hint: "Snap or upload today's plan — the same sheet you'd send on WhatsApp. It's kept as the day's plan; no typing the targets.",
+    presetType: "Production Plan",
+    lockType: true,
+    hideLot: true,
+    dateLabel: "Plan date",
+    remarksPlaceholder: "e.g. Day shift",
+    savedToast: "Plan uploaded",
+  });
 
   App.views.docs = function(host){
     loadInto(host, "Loading documents…", async (db)=>{
