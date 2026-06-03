@@ -151,34 +151,54 @@
     const confirmed = (documents||[]).filter(d=> d && d.summary_json && d.summary_json.confirmed);
     if(!confirmed.length || !dm) return null;
 
-    const byStage = {};  // stage -> { kg, cases, sheets }
+    // Group by production STREAM, because the end output is counted in a
+    // different unit per stream: Plate/Block in BLOCKS, IQF in KG / CASES.
+    const byStream = {};  // stream -> { blocks, kg, cases, sheets }
     let review = 0;
     confirmed.forEach(d=>{
       const s = d.summary_json;
-      const stage = s.stage || "Frozen";
-      const t = byStage[stage] || (byStage[stage] = { kg:0, cases:0, sheets:0 });
-      const kg = (s.computed_total_kg!=null) ? Number(s.computed_total_kg)
-                 : (dm.rollupItems(s.line_items).kg || 0);
-      t.kg += Number(kg)||0;
-      t.cases += Number(s.computed_total_cases||0)||0;
+      const roll = dm.rollupItems(s.line_items);
+      const stream = s.stream || dm.docStream(d.sheet_type, s.sheet_kind);
+      const t = byStream[stream] || (byStream[stream] = { blocks:0, kg:0, cases:0, sheets:0 });
+      const slabs = (s.computed_total_slabs!=null) ? Number(s.computed_total_slabs) : (roll.slabs||0);
+      const kg    = (s.computed_total_kg!=null)    ? Number(s.computed_total_kg)    : (roll.kg||0);
+      const cases = (s.computed_total_cases!=null) ? Number(s.computed_total_cases) : (roll.cases||0);
+      t.blocks += Number(slabs)||0;
+      t.kg     += Number(kg)||0;
+      t.cases  += Number(cases)||0;
       t.sheets += 1;
       if(s.reconcile_status && s.reconcile_status!=="ok") review += 1;
     });
 
-    const ICON = { Frozen:"❄️", Packed:"📦", Repacked:"♻️" };
-    const order = ["Frozen","Packed","Repacked"];
-    const stages = Object.keys(byStage).sort((a,b)=> (order.indexOf(a)+99*(order.indexOf(a)<0)) - (order.indexOf(b)+99*(order.indexOf(b)<0)));
+    const META = {
+      Block:  { icon:"🧊", label:"Plate / Block" },
+      IQF:    { icon:"❄️", label:"IQF / Spiral" },
+      Repack: { icon:"♻️", label:"Repacking" },
+    };
+    const order = ["Block","IQF","Repack"];
+    const streams = Object.keys(byStream).sort((a,b)=> (order.indexOf(a)+99*(order.indexOf(a)<0)) - (order.indexOf(b)+99*(order.indexOf(b)<0)));
     const totalSheets = confirmed.length;
 
     const tiles = el("div",{style:"display:flex;flex-wrap:wrap;gap:14px;margin-top:6px"});
-    stages.forEach(st=>{
-      const t = byStage[st];
-      const kg = Math.round(t.kg*10)/10;
+    streams.forEach(st=>{
+      const t = byStream[st];
+      const m = META[st] || { icon:"•", label:st };
+      // Block stream → headline in BLOCKS; IQF/Repack → headline in KG.
+      let headline, sub;
+      if(st === "Block"){
+        headline = (Math.round(t.blocks*10)/10) + " block" + (t.blocks===1?"":"s");
+        const bits = [];
+        if(t.kg) bits.push((Math.round(t.kg*10)/10)+" kg");
+        if(t.cases) bits.push(t.cases+" cases");
+        sub = t.sheets+" sheet"+(t.sheets===1?"":"s")+(bits.length?(" · "+bits.join(" · ")):"");
+      } else {
+        headline = (Math.round(t.kg*10)/10) + " kg";
+        sub = t.sheets+" sheet"+(t.sheets===1?"":"s")+(t.cases?(" · "+t.cases+" cases"):"");
+      }
       tiles.appendChild(el("div",{style:"flex:1 1 130px;min-width:120px;background:#f6f9fc;border:1px solid #e3ebf3;border-radius:12px;padding:12px 14px"},[
-        el("div",{style:"font-size:12px;color:var(--muted)",text:(ICON[st]||"•")+" "+st}),
-        el("div",{style:"font-size:22px;font-weight:800;margin-top:2px",text:kg+" kg"}),
-        el("div",{style:"font-size:11px;color:var(--muted);margin-top:2px",
-          text:t.sheets+" sheet"+(t.sheets===1?"":"s")+(t.cases?(" · "+t.cases+" cases"):"")}),
+        el("div",{style:"font-size:12px;color:var(--muted)",text:m.icon+" "+m.label}),
+        el("div",{style:"font-size:22px;font-weight:800;margin-top:2px",text:headline}),
+        el("div",{style:"font-size:11px;color:var(--muted);margin-top:2px",text:sub}),
       ]));
     });
 

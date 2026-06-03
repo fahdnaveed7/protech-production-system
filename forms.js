@@ -1237,6 +1237,18 @@
     if(/load report|block|load/.test(s)) return "Packed";
     return "Frozen"; // IQF / Plate / Spiral / production default
   }
+  // Which production stream a sheet belongs to. This decides the UNIT the
+  // end output is counted in — NOT the stage.
+  //   Plate freezer / Block → counted in BLOCKS (slabs).
+  //   IQF / Spiral          → counted in KG or CASES.
+  // (Load Report packs blocks for export, so it stays in the Block stream.)
+  function docStream(sheetType, modelKind){
+    const s = ((sheetType||"")+" "+(modelKind||"")).toLowerCase();
+    if(/plate|block|load report|load/.test(s)) return "Block";
+    if(/iqf|spiral/.test(s)) return "IQF";
+    if(/repack/.test(s)) return "Repack";
+    return "IQF"; // default end output is weight/case based
+  }
   // Roll the confirmed line items up into kg / slabs / cases.
   // kg prefers the row's gross weight; falls back to slabs × kg-per-slab.
   function rollupItems(items){
@@ -1254,8 +1266,24 @@
       cases: haveCases ? cases : null,
     };
   }
+  // The headline metric for a sheet, in its stream's correct unit.
+  //   Block stream → { unit:"blocks", qty:<slabs>, label:"N blocks" }
+  //   IQF stream   → { unit:"kg"|"cases", qty:<kg|cases>, label:"X kg" }
+  // Falls back gracefully when the preferred unit is missing.
+  function primaryMetric(stream, roll){
+    roll = roll || {};
+    if(stream === "Block"){
+      if(roll.slabs != null) return { unit:"blocks", qty: roll.slabs, label: roll.slabs + " block" + (roll.slabs===1?"":"s") };
+      if(roll.kg != null)    return { unit:"kg", qty: roll.kg, label: roll.kg + " kg" };
+      return { unit:null, qty:null, label:"—" };
+    }
+    // IQF / Repack → weight first, cases as the alternate
+    if(roll.kg != null)    return { unit:"kg", qty: roll.kg, label: roll.kg + " kg" };
+    if(roll.cases != null) return { unit:"cases", qty: roll.cases, label: roll.cases + " case" + (roll.cases===1?"":"s") };
+    return { unit:null, qty:null, label:"—" };
+  }
   // expose so views.js can total confirmed documents with the SAME maths
-  App.docMath = { numv, docStage, rollupItems };
+  App.docMath = { numv, docStage, docStream, rollupItems, primaryMetric };
 
   // Capture Document — Phase 1 of the document-keeping plan.
   // Snap or upload a sheet, tag lot + sheet type. The photo IS the record.
@@ -1495,6 +1523,8 @@
         try{
           if(!uploadedUrl){ uploadedUrl = await db.uploadPhoto(file.files[0], lot||"unassigned", slug(sheet)); }
           const roll = App.docMath.rollupItems(items);
+          const stream = App.docMath.docStream(sheet, header.sheet_kind);
+          const primary = App.docMath.primaryMetric(stream, roll);
           const summary = {
             sheet_kind: header.sheet_kind || sheet,
             date: header.date || dateIn.value || null,
@@ -1507,6 +1537,8 @@
             computed_total_kg: roll.kg, computed_total_slabs: roll.slabs, computed_total_cases: roll.cases,
             reconciled: reconcileStatus==="ok", reconcile_status: reconcileStatus,
             stage: App.docMath.docStage(sheet, header.sheet_kind),
+            stream: stream,
+            primary_unit: primary.unit, primary_qty: primary.qty,
             confirmed: true,
             confirmed_by_role: (App.role && App.role.id) || null,
             confirmed_at: new Date().toISOString(),
@@ -1518,11 +1550,11 @@
             summary_json: summary,
             extraction_confidence: res.confidence || null,
           });
-          toast("Confirmed — "+(roll.kg!=null?roll.kg+" kg ":"")+"counted ✓","ok");
+          toast("Confirmed — "+(primary.label!=="—"?primary.label+" ":"")+"counted ✓","ok");
           recentHead.style.display="";
           recentWrap.insertBefore(el("div",{},[
             el("img",{class:"thumb", style:"width:100%;height:90px", src:uploadedUrl, onclick:()=>lightbox(uploadedUrl)}),
-            el("div",{style:"font-size:10px;color:var(--muted);margin-top:4px;text-align:center",text:(lot||sheet)+(roll.kg!=null?" · "+roll.kg+"kg":"")}),
+            el("div",{style:"font-size:10px;color:var(--muted);margin-top:4px;text-align:center",text:(lot||sheet)+(primary.label!=="—"?" · "+primary.label:"")}),
           ]), recentWrap.firstChild);
           // reset for the next sheet
           file.value=""; prev.src=""; prev.classList.add("hidden"); pick.textContent="📷 Take or upload sheet";
