@@ -61,15 +61,25 @@
     if(!db || !db.isOnline()) return notConnected(host);
     const spin = loading(host, "Loading production plan…");
     try{
-      const [plans, packing] = await Promise.all([
+      const [plans, packing, documents] = await Promise.all([
         db.list("production_plans", { order:"created_at", ascending:false, limit:100 }),
         db.list("packing_status",   { order:"recorded_at", ascending:false, limit:300 }),
+        db.list("documents",        { order:"created_at", ascending:false, limit:300 }).catch(()=>[]),
       ]);
       spin.remove();
 
+      // Confirmed-from-sheets strip — totals the money-numbers a human has
+      // CONFIRMED off scanned production/load sheets, grouped by stage. Uses the
+      // exact same maths the capture screen used (App.docMath).
+      const strip = confirmedStrip(documents);
+      if(strip) host.appendChild(strip);
+
       if(!plans.length){
-        return emptyState(host,"📋","No production plans yet",
+        if(!strip) emptyState(host,"📋","No production plans yet",
           App.role.id==="production" ? "Add today's plan from the Daily Plan task." : "Production hasn't posted a plan yet.");
+        else host.appendChild(el("div",{class:"hint",style:"text-transform:none;margin-top:4px",
+          text:"No formal production plan posted yet — the totals above come from confirmed sheets."}));
+        return;
       }
 
       // latest packing row per lot_number+buyer
@@ -133,6 +143,55 @@
       emptyState(host,"⚠️","Could not load plan", String(e.message||e));
     }
   };
+
+  // Totals the CONFIRMED scanned sheets by stage and renders a compact strip.
+  // Returns null when nothing has been confirmed yet.
+  function confirmedStrip(documents){
+    const dm = App.docMath;
+    const confirmed = (documents||[]).filter(d=> d && d.summary_json && d.summary_json.confirmed);
+    if(!confirmed.length || !dm) return null;
+
+    const byStage = {};  // stage -> { kg, cases, sheets }
+    let review = 0;
+    confirmed.forEach(d=>{
+      const s = d.summary_json;
+      const stage = s.stage || "Frozen";
+      const t = byStage[stage] || (byStage[stage] = { kg:0, cases:0, sheets:0 });
+      const kg = (s.computed_total_kg!=null) ? Number(s.computed_total_kg)
+                 : (dm.rollupItems(s.line_items).kg || 0);
+      t.kg += Number(kg)||0;
+      t.cases += Number(s.computed_total_cases||0)||0;
+      t.sheets += 1;
+      if(s.reconcile_status && s.reconcile_status!=="ok") review += 1;
+    });
+
+    const ICON = { Frozen:"❄️", Packed:"📦", Repacked:"♻️" };
+    const order = ["Frozen","Packed","Repacked"];
+    const stages = Object.keys(byStage).sort((a,b)=> (order.indexOf(a)+99*(order.indexOf(a)<0)) - (order.indexOf(b)+99*(order.indexOf(b)<0)));
+    const totalSheets = confirmed.length;
+
+    const tiles = el("div",{style:"display:flex;flex-wrap:wrap;gap:14px;margin-top:6px"});
+    stages.forEach(st=>{
+      const t = byStage[st];
+      const kg = Math.round(t.kg*10)/10;
+      tiles.appendChild(el("div",{style:"flex:1 1 130px;min-width:120px;background:#f6f9fc;border:1px solid #e3ebf3;border-radius:12px;padding:12px 14px"},[
+        el("div",{style:"font-size:12px;color:var(--muted)",text:(ICON[st]||"•")+" "+st}),
+        el("div",{style:"font-size:22px;font-weight:800;margin-top:2px",text:kg+" kg"}),
+        el("div",{style:"font-size:11px;color:var(--muted);margin-top:2px",
+          text:t.sheets+" sheet"+(t.sheets===1?"":"s")+(t.cases?(" · "+t.cases+" cases"):"")}),
+      ]));
+    });
+
+    return el("div",{class:"card",style:"margin-bottom:16px"},[
+      el("div",{style:"display:flex;align-items:center;gap:8px;flex-wrap:wrap"},[
+        el("div",{style:"font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px",text:"Confirmed from sheets"}),
+        review>0 ? el("span",{class:"review-tag",text:review+" to review"}) : null,
+      ]),
+      tiles,
+      el("div",{style:"font-size:11px;color:var(--muted);margin-top:10px",
+        text:totalSheets+" confirmed sheet"+(totalSheets===1?"":"s")+" · numbers a person checked against each sheet's total"}),
+    ]);
+  }
 
   function progressBar(pct){
     pct = Math.max(0, Math.min(100, pct||0));

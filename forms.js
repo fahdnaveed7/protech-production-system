@@ -1218,15 +1218,44 @@
   // Sheet types the floor captures. The photo IS the record; the tag just
   // says which paper it is so the gallery + (Phase 2) auto-read knows the layout.
   const SHEET_TYPES = [
-    "Production Plan",
     "IQF Production (144)",
     "Plate / Block",
     "Spiral",
     "Load Report (72)",
     "Repacking (639)",
+    "Production Plan",
     "Other",
   ];
   const slug = (s)=> String(s||"doc").toLowerCase().replace(/[^\w]+/g,"_").replace(/^_+|_+$/g,"") || "doc";
+
+  // ---- money-numbers maths, shared with the progress chart (views.js) -------
+  const numv = (v)=>{ if(v==null||v==="") return null; const n=Number(String(v).replace(/[^0-9.\-]/g,"")); return isFinite(n)?n:null; };
+  // Which stage a confirmed sheet advances a lot to, from its captured tag.
+  function docStage(sheetType, modelKind){
+    const s = ((sheetType||"")+" "+(modelKind||"")).toLowerCase();
+    if(/repack/.test(s)) return "Repacked";
+    if(/load report|block|load/.test(s)) return "Packed";
+    return "Frozen"; // IQF / Plate / Spiral / production default
+  }
+  // Roll the confirmed line items up into kg / slabs / cases.
+  // kg prefers the row's gross weight; falls back to slabs × kg-per-slab.
+  function rollupItems(items){
+    let kg=0,haveKg=false, slabs=0,haveSlabs=false, cases=0,haveCases=false;
+    (items||[]).forEach(it=>{
+      const g=numv(it.gross_weight_kg), s=numv(it.slabs), sw=numv(it.slab_weight_kg), c=numv(it.cases);
+      if(g!=null){ kg+=g; haveKg=true; }
+      else if(s!=null && sw!=null){ kg+=s*sw; haveKg=true; }
+      if(s!=null){ slabs+=s; haveSlabs=true; }
+      if(c!=null){ cases+=c; haveCases=true; }
+    });
+    return {
+      kg: haveKg ? Math.round(kg*10)/10 : null,
+      slabs: haveSlabs ? slabs : null,
+      cases: haveCases ? cases : null,
+    };
+  }
+  // expose so views.js can total confirmed documents with the SAME maths
+  App.docMath = { numv, docStage, rollupItems };
 
   // Capture Document — Phase 1 of the document-keeping plan.
   // Snap or upload a sheet, tag lot + sheet type. The photo IS the record.
@@ -1237,6 +1266,7 @@
     const db = DB();
     if(!db || !db.isOnline()) return notConnected(host);
     let lots = []; try{ lots = await db.listLots(); }catch(_){}
+    let uploadedUrl = null;   // set once the photo is uploaded (read or save), reused so we never double-upload
 
     host.innerHTML = "";
     const card = el("div",{class:"card"});
@@ -1277,17 +1307,27 @@
     const prev = el("img",{class:"photo-prev hidden", alt:"preview"});
     const pick = el("button",{class:"photo-pick", type:"button", text:"📷 Take or upload sheet",
       onclick:()=> file.click()});
+    // quality guidance — the #1 thing that makes the read accurate
+    const shot = el("div",{class:"hint",style:"text-transform:none;margin-top:8px;line-height:1.5",
+      html:"📐 <b>Hold the sheet flat and fill the frame.</b> Keep it straight-on (not angled), avoid glare and shadows — a clear, full photo reads far more accurately."});
     file.addEventListener("change", ()=>{
       const f = file.files[0];
       if(f){ prev.src = URL.createObjectURL(f); prev.classList.remove("hidden"); pick.textContent="📷 Change photo"; }
+      uploadedUrl = null;                       // new photo → previous upload + read are stale
+      if(typeof clearPanel === "function") clearPanel();
     });
     grid.appendChild(el("div",{class:"fld full"},[ el("label",{text:"Document photo"}),
-      el("div",{class:"photo-field"},[pick, prev, file]) ]));
+      el("div",{class:"photo-field"},[pick, prev, file]), shot ]));
 
     form.appendChild(grid);
 
     const errEl = el("div",{class:"err-msg hidden"});
     form.appendChild(errEl);
+
+    // confirm-only read panel renders here (between the form and the actions)
+    const panelHost = el("div");
+    const clearPanel = ()=>{ panelHost.innerHTML=""; };
+    form.appendChild(panelHost);
 
     // recently captured (this session) — quick reassurance the photo stuck
     const recentHead = el("div",{class:"hint",style:"text-transform:none;font-weight:700;margin:10px 0 6px;display:none",text:"Captured just now"});
@@ -1295,10 +1335,208 @@
     form.appendChild(recentHead); form.appendChild(recentWrap);
 
     const saveBtn = el("button",{class:"btn btn-primary", text:"Save document"});
+    const readBtn = el("button",{class:"btn btn-ghost", text:"🔍 Read & confirm numbers"});
     const doneBtn = el("button",{class:"btn btn-ghost", text:"Done", onclick:()=> App.home()});
-    form.appendChild(el("div",{class:"form-actions"},[doneBtn, saveBtn]));
+    const actions = [doneBtn];
+    if(!preset.noRead) actions.push(readBtn);
+    actions.push(saveBtn);
+    form.appendChild(el("div",{class:"form-actions"},actions));
     card.appendChild(form);
     host.appendChild(card);
+
+    // ---- Read & confirm (confirm-only): AI proposes the money-numbers, a human
+    //      confirms/corrects, then we save. Nothing counts until "Confirm" is tapped.
+    readBtn.addEventListener("click", async ()=>{
+      errEl.classList.add("hidden");
+      const f = file.files[0];
+      if(!f){ errEl.textContent="Take or upload the sheet photo first, then read it."; errEl.classList.remove("hidden"); return; }
+      readBtn.disabled=true; const rl=readBtn.textContent; readBtn.textContent="Reading…";
+      clearPanel();
+      panelHost.appendChild(el("div",{class:"hint",style:"text-transform:none",text:"Reading the sheet… this takes a few seconds."}));
+      try{
+        const res = await App.scan.extract("production_doc", f, { lot: lotSel.value || null });
+        uploadedUrl = res.photo_url || uploadedUrl;
+        renderReview(res);
+      }catch(e){
+        clearPanel();
+        errEl.textContent="Could not read the sheet: "+(e.message||e)+". You can still Save the photo as-is.";
+        errEl.classList.remove("hidden");
+      }finally{ readBtn.disabled=false; readBtn.textContent=rl; }
+    });
+
+    // Build the editable confirm panel from an extraction result.
+    function renderReview(res){
+      clearPanel();
+      const fields = (res && res.fields) || {};
+      const conf   = (res && res.confidence) || {};
+      const thr    = App.scan.threshold();
+      const items  = Array.isArray(fields.line_items) ? fields.line_items.map(x=>({...x})) : [];
+      const itemConf = Array.isArray(conf.line_items) ? conf.line_items : [];
+      const header = {
+        sheet_kind: fields.sheet_kind || null,
+        date: fields.date || null,
+        lot_number: fields.lot_number || null,
+        market: fields.market || null,
+      };
+      const totals = {
+        printed_total_kg: fields.printed_total_kg,
+        printed_total_slabs: fields.printed_total_slabs,
+        printed_total_cases: fields.printed_total_cases,
+      };
+
+      const wrap = el("div",{class:"card",style:"margin-top:4px;background:#fbfdff;border:1px solid #e3ebf3"});
+      wrap.appendChild(el("div",{style:"font-weight:800;font-size:14px;margin-bottom:2px",text:"Confirm the numbers"}));
+      wrap.appendChild(el("div",{class:"hint",style:"text-transform:none;margin-bottom:12px",
+        text:"The AI read this — check it against the sheet, fix anything wrong, then Confirm. Amber cells are the ones it was unsure of."}));
+
+      // header line: sheet kind / lot / market
+      const hbits = [header.sheet_kind, header.lot_number?("Lot "+header.lot_number):null, header.market]
+        .filter(Boolean).join("  ·  ");
+      if(hbits) wrap.appendChild(el("div",{style:"font-size:13px;color:var(--muted);margin-bottom:10px",text:hbits}));
+
+      // ---- editable rows ----
+      const COLS = [
+        {k:"product",label:"Product",w:"1.4fr"},
+        {k:"grade",label:"Grade",w:"1fr"},
+        {k:"slabs",label:"Slabs",w:".8fr"},
+        {k:"slab_weight_kg",label:"kg/slab",w:".8fr"},
+        {k:"cases",label:"Cases",w:".8fr"},
+        {k:"glaze_pct",label:"Glaze%",w:".8fr"},
+        {k:"gross_weight_kg",label:"Kg",w:"1fr"},
+      ];
+      const gridCols = COLS.map(c=>c.w).join(" ")+" 26px";
+      const tbl = el("div",{style:"display:flex;flex-direction:column;gap:6px"});
+      const headRow = el("div",{style:`display:grid;grid-template-columns:${gridCols};gap:6px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px`});
+      COLS.forEach(c=> headRow.appendChild(el("div",{text:c.label})));
+      headRow.appendChild(el("div",{}));
+      tbl.appendChild(headRow);
+
+      let totLine, banner;
+      function rowEl(it, idx){
+        const r = el("div",{style:`display:grid;grid-template-columns:${gridCols};gap:6px`});
+        COLS.forEach(c=>{
+          const inp = el("input",{type:"text", value: it[c.k]==null?"":String(it[c.k]),
+            style:"width:100%;padding:6px 7px;border:1px solid #cdd7e1;border-radius:7px;font-size:13px"});
+          const cc = itemConf[idx] && typeof itemConf[idx][c.k]==="number" ? itemConf[idx][c.k] : null;
+          if(cc!=null && cc<thr && it[c.k]!=null && it[c.k]!==""){
+            inp.style.borderColor="#e0a106"; inp.style.background="#fff8e6"; inp.title="The AI was unsure of this — please check.";
+          }
+          inp.addEventListener("input", ()=>{ it[c.k]= inp.value.trim()===""?null:inp.value.trim(); recompute(); });
+          r.appendChild(inp);
+        });
+        const del = el("button",{type:"button",title:"Remove row",text:"✕",
+          style:"border:none;background:none;color:#b0392f;font-size:14px;cursor:pointer;padding:0",
+          onclick:()=>{ const i=items.indexOf(it); if(i>=0){ items.splice(i,1); itemConf.splice(i,1);} redraw(); }});
+        r.appendChild(del);
+        return r;
+      }
+      const body = el("div",{style:"display:flex;flex-direction:column;gap:6px"});
+      function redraw(){ body.innerHTML=""; items.forEach((it,i)=> body.appendChild(rowEl(it,i))); recompute(); }
+      tbl.appendChild(body);
+      wrap.appendChild(tbl);
+
+      const addBtn = el("button",{class:"btn btn-ghost",type:"button",style:"margin-top:8px;font-size:12px;padding:6px 10px",
+        text:"+ Add row", onclick:()=>{ items.push({product:null,grade:null,slabs:null,slab_weight_kg:null,cases:null,glaze_pct:null,gross_weight_kg:null}); itemConf.push({}); redraw(); }});
+      wrap.appendChild(addBtn);
+
+      // ---- printed totals + reconcile ----
+      const totBox = el("div",{style:"display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-top:14px"});
+      function totFld(label,key){
+        const inp = el("input",{type:"text", value: totals[key]==null?"":String(totals[key]),
+          style:"width:90px;padding:6px 7px;border:1px solid #cdd7e1;border-radius:7px;font-size:13px"});
+        inp.addEventListener("input", ()=>{ totals[key]= inp.value.trim()===""?null:inp.value.trim(); recompute(); });
+        return el("div",{style:"display:flex;flex-direction:column;gap:3px"},[
+          el("label",{style:"font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px",text:label}), inp ]);
+      }
+      totBox.appendChild(totFld("Sheet total kg","printed_total_kg"));
+      totBox.appendChild(totFld("Sheet total slabs","printed_total_slabs"));
+      totBox.appendChild(totFld("Sheet total cases","printed_total_cases"));
+      wrap.appendChild(totBox);
+
+      totLine = el("div",{style:"font-size:13px;font-weight:700;margin-top:12px"});
+      banner  = el("div",{style:"font-size:12px;margin-top:6px;padding:8px 10px;border-radius:8px"});
+      wrap.appendChild(totLine); wrap.appendChild(banner);
+
+      let reconcileStatus = "none";
+      function near(a,b){ const tol=Math.max(1, Math.abs(b)*0.01); return Math.abs(a-b)<=tol; }
+      function recompute(){
+        const roll = App.docMath.rollupItems(items);
+        const bits = [];
+        if(roll.kg!=null)   bits.push(roll.kg+" kg");
+        if(roll.slabs!=null)bits.push(roll.slabs+" slabs");
+        if(roll.cases!=null)bits.push(roll.cases+" cases");
+        totLine.textContent = "Rows add up to: "+(bits.join("  ·  ")||"—");
+        const pk = App.docMath.numv(totals.printed_total_kg), psl = App.docMath.numv(totals.printed_total_slabs);
+        if(pk!=null && roll.kg!=null){
+          reconcileStatus = near(roll.kg,pk)?"ok":"warn";
+          banner.textContent = reconcileStatus==="ok"
+            ? "✓ Rows reconcile to the sheet total ("+pk+" kg)."
+            : "⚠ Rows sum to "+roll.kg+" kg but the sheet says "+pk+" kg — check the highlighted figures.";
+        } else if(psl!=null && roll.slabs!=null){
+          reconcileStatus = near(roll.slabs,psl)?"ok":"warn";
+          banner.textContent = reconcileStatus==="ok"
+            ? "✓ Rows reconcile to the sheet total ("+psl+" slabs)."
+            : "⚠ Rows sum to "+roll.slabs+" slabs but the sheet says "+psl+" — check the highlighted figures.";
+        } else {
+          reconcileStatus = "none";
+          banner.textContent = "No printed total to cross-check — please verify the rows against the sheet yourself.";
+        }
+        const styles = { ok:["#e7f6ec","#1d7a3f"], warn:["#fff4e0","#9a6700"], none:["#eef2f6","#5a6b7b"] }[reconcileStatus];
+        banner.style.background=styles[0]; banner.style.color=styles[1];
+      }
+
+      // ---- confirm & save ----
+      const confirmBtn = el("button",{class:"btn btn-primary",style:"margin-top:14px;width:100%",
+        text:"✓ Confirm & save these numbers"});
+      confirmBtn.addEventListener("click", async ()=>{
+        const sheet = typeSel.value;
+        const lot = lotSel.value || header.lot_number || null;
+        confirmBtn.disabled=true; const cl=confirmBtn.textContent; confirmBtn.textContent="Saving…";
+        try{
+          if(!uploadedUrl){ uploadedUrl = await db.uploadPhoto(file.files[0], lot||"unassigned", slug(sheet)); }
+          const roll = App.docMath.rollupItems(items);
+          const summary = {
+            sheet_kind: header.sheet_kind || sheet,
+            date: header.date || dateIn.value || null,
+            lot_number: lot,
+            market: header.market || null,
+            printed_total_kg: App.docMath.numv(totals.printed_total_kg),
+            printed_total_slabs: App.docMath.numv(totals.printed_total_slabs),
+            printed_total_cases: App.docMath.numv(totals.printed_total_cases),
+            line_items: items,
+            computed_total_kg: roll.kg, computed_total_slabs: roll.slabs, computed_total_cases: roll.cases,
+            reconciled: reconcileStatus==="ok", reconcile_status: reconcileStatus,
+            stage: App.docMath.docStage(sheet, header.sheet_kind),
+            confirmed: true,
+            confirmed_by_role: (App.role && App.role.id) || null,
+            confirmed_at: new Date().toISOString(),
+          };
+          await DB().insert("documents", {
+            lot_number: lot, sheet_type: sheet, photo_url: uploadedUrl,
+            doc_date: dateIn.value || header.date || null, remarks: remIn.value.trim() || null,
+            entry_mode: "photo_confirmed",
+            summary_json: summary,
+            extraction_confidence: res.confidence || null,
+          });
+          toast("Confirmed — "+(roll.kg!=null?roll.kg+" kg ":"")+"counted ✓","ok");
+          recentHead.style.display="";
+          recentWrap.insertBefore(el("div",{},[
+            el("img",{class:"thumb", style:"width:100%;height:90px", src:uploadedUrl, onclick:()=>lightbox(uploadedUrl)}),
+            el("div",{style:"font-size:10px;color:var(--muted);margin-top:4px;text-align:center",text:(lot||sheet)+(roll.kg!=null?" · "+roll.kg+"kg":"")}),
+          ]), recentWrap.firstChild);
+          // reset for the next sheet
+          file.value=""; prev.src=""; prev.classList.add("hidden"); pick.textContent="📷 Take or upload sheet";
+          remIn.value=""; uploadedUrl=null; clearPanel();
+        }catch(e){
+          confirmBtn.disabled=false; confirmBtn.textContent=cl;
+          errEl.textContent="Could not save: "+(e.message||e); errEl.classList.remove("hidden");
+        }
+      });
+      wrap.appendChild(confirmBtn);
+
+      panelHost.appendChild(wrap);
+      redraw();
+    }
 
     saveBtn.addEventListener("click", async ()=>{
       errEl.classList.add("hidden");
@@ -1308,7 +1546,7 @@
       const lot = lotSel.value || null;
       saveBtn.disabled=true; const lbl=saveBtn.textContent; saveBtn.textContent="Saving…";
       try{
-        const url = await db.uploadPhoto(f, lot || "unassigned", slug(sheet));
+        const url = uploadedUrl || await db.uploadPhoto(f, lot || "unassigned", slug(sheet));
         const rec = {
           lot_number: lot,
           sheet_type: sheet,
@@ -1327,7 +1565,7 @@
         toast((preset.savedToast || "Document saved")+" ✓","ok");
         // reset photo for the next sheet, keep type + lot for fast batch capture
         file.value=""; prev.src=""; prev.classList.add("hidden"); pick.textContent="📷 Take or upload sheet";
-        remIn.value="";
+        remIn.value=""; uploadedUrl=null; clearPanel();
       }catch(e){ errEl.textContent="Could not save: "+(e.message||e); errEl.classList.remove("hidden"); }
       finally{ saveBtn.disabled=false; saveBtn.textContent=lbl; }
     });
@@ -1348,6 +1586,7 @@
     dateLabel: "Plan date",
     remarksPlaceholder: "e.g. Day shift",
     savedToast: "Plan uploaded",
+    noRead: true,   // the plan is the TARGET — kept as the day's plan; not part of the confirm-read loop
   });
 
   App.views.docs = function(host){

@@ -170,6 +170,51 @@ as each sample, each value 0..1. Counts like "26/30" stay literal strings.
 Only include a sample object for columns that actually have data; set a cell to
 null + low confidence when blank or illegible.`,
   },
+
+  // ---------------- Production / Load / Repacking "money-numbers" sheet -------
+  // Confirm-only: this read is ALWAYS proposed to a human for confirmation in
+  // the app; nothing it returns is committed to stock automatically. We read
+  // only the numbers that move stock/weight, plus any TOTAL written on the
+  // sheet so the app can cross-check (rows must sum to the printed total).
+  production_doc: {
+    columns: [
+      "sheet_kind", "date", "lot_number", "market",
+      "printed_total_kg", "printed_total_slabs", "printed_total_cases",
+      "line_items",
+    ],
+    prompt: `You are reading a PRODUCTION or LOAD sheet for an Indian shrimp
+processor (Protech Organo Foods). It will be one of:
+ - "IQF Production Report" (freezing output): rows of product / grade with a
+   GROSS WEIGHT KGS column, glaze %, packing, and NO. OF CASES.
+ - "Plate/Block Load Report" or "Load Report": rows of grade with a NO. OF SLABS
+   count; a slab weight printed in the header (e.g. 1.400 / 1.500) is the net kg
+   PER SLAB for that grade.
+ - "Spiral" production, or a "Repacking Report".
+Read ONLY the money-numbers that move stock and weight — ignore decorative or
+process columns. Put the sheet-level values directly in "fields":
+- sheet_kind: which of the above this is (short text).
+- date: the sheet date.
+- lot_number: the lot code (series/seq/year, e.g. "5/89/26") that governs the
+  sheet, if one does; else null.
+- market: buyer / market if printed (e.g. "Russia"); else null.
+- printed_total_kg: the TOTAL kg written or underlined on the sheet, if any
+  (number; else null). Do NOT compute it — only read a total that is written.
+- printed_total_slabs: the TOTAL number of slabs written, if any (number; else null).
+- printed_total_cases: the TOTAL number of cases written, if any (number; else null).
+Put the rows in "fields".line_items — an ARRAY with ONE object PER non-blank data
+row, top to bottom. Each object has EXACTLY these keys:
+  product (e.g. "R PD", "R PTO", "R PTO(V)", "R H/ON", "HL"; text or null),
+  grade (count/grade like "41/50", "91/110", "26/30"; literal string or null),
+  slabs (number of slabs on that row; number or null),
+  slab_weight_kg (net kg per slab if shown, e.g. 1.4 or 1.5; number or null),
+  cases (number of cases on that row; number or null),
+  glaze_pct (glaze percentage; number or null),
+  gross_weight_kg (that row's weight in kg; number or null).
+Skip blank rows entirely. Never invent a row or a number to fill a gap.
+Mirror everything in "confidence": the sheet-level field confidences go directly
+under "confidence", and "confidence".line_items is an ARRAY the SAME length with
+the SAME keys, each value 0..1 (how sure you are of that specific cell).`,
+  },
 };
 
 Deno.serve(async (req: Request) => {
@@ -223,7 +268,7 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         model: MODEL,
         temperature: 0,
-        max_tokens: 2000,
+        max_tokens: 4000,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: system },
